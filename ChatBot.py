@@ -35,10 +35,11 @@ SOURCES_BUTTON_HEIGHT = 25
 SEND_BTN_LABEL = "Send"
 SRC_BTN_LABEL = "Show sources"
 
-# --- Behavior Toggles / Models ---
+# --- API Models related ---
 ENABLE_HOSTED_WEB_SEARCH = True  # Turn this on to use the hosted web search tool
-DEFAULT_MODEL = "gpt-4"          # Non-browsing model
-BROWSE_MODEL = "gpt-5"          # Browsing-capable model for hosted web search "gpt-4o"
+DEFAULT_MODEL = "" # Non-browsing model (or used without tools)
+BROWSE_MODEL = "" # Browsing-capable model for hosted web search "gpt-4o"
+MODEL_OPTIONS = []
 
 URL_REGEX = re.compile(
     r"(https?://[^\s)]+)",
@@ -54,28 +55,54 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
             out.append(it)
     return out
 
+
 class ChatMemoryBot:
-    def __init__(self, system_prompt: str, model: str = DEFAULT_MODEL,
-                 browse_model: str = BROWSE_MODEL, max_tokens: int = 20000):
+    def __init__(self, system_prompt: str, max_tokens: int = 20000):
         self.client = OpenAI()
-        self.model = model
-        self.browse_model = browse_model
+
+        # Get all models intended for standard completions/chat into MODEL_OPTIONS array
+        global MODEL_OPTIONS, DEFAULT_MODEL, BROWSE_MODEL
+        models = self.client.models.list()
+
+        n = 0
+        # Skip anything not intended for standard completions/chat
+        for m in models.data:
+            model_id = m.id
+            if any(skip in model_id for skip in ["embedding", "audio", "search", "realtime", "preview","transcribe", "tts"]):
+                continue
+            if model_id.startswith("gpt-") and not("instruct" in model_id) and (model_id != "gpt-image-1"):
+                MODEL_OPTIONS.append(model_id)
+                n += 1
+
+        print(f"\n=== {n} Chat Models (use /chat/completions) ===")
+        n = 0
+        for cm in sorted(MODEL_OPTIONS): 
+            n +=1
+            print(f"{n}: {cm}")
+
+        DEFAULT_MODEL = MODEL_OPTIONS[0]
+        BROWSE_MODEL = MODEL_OPTIONS[0]
+
+        self.model = DEFAULT_MODEL
+        self.browse_model = BROWSE_MODEL
         self.max_tokens = max_tokens
 
         # tiktoken mapping with a safe fallback for new model names
         try:
-            self.encoder = tiktoken.encoding_for_model(model)
+            self.encoder = tiktoken.encoding_for_model(self.browse_model)
         except KeyError:
             print("EXCEPTION")
-            prefers_long_ctx = any(s in model for s in ("gpt-5", "4.1", "4o", "o4", "o3", "200k"))
+            prefers_long_ctx = any(s in self.browse_model for s in ("gpt-5", "4.1", "4o", "o4", "o3", "200k"))
             encoding_name = "o200k_base" if prefers_long_ctx else "cl100k_base"
             self.encoder = tiktoken.get_encoding(encoding_name)
 
         self.chat_history: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
         print(f"System prompt:\n{self.chat_history}")
 
+
     def _count_tokens(self, messages: List[Dict[str, str]]) -> int:
         return sum(len(self.encoder.encode(msg.get("content", ""))) for msg in messages)
+
 
     def _summarize_history(self, old_messages: List[Dict[str, str]]) -> str:
         """
@@ -215,28 +242,18 @@ class ChatbotApp:
             "   depending on the formality of the response."
         )
 
-        self.bot = ChatMemoryBot(system_prompt=str_system_prompt, model=DEFAULT_MODEL, browse_model=BROWSE_MODEL)
+
+        self.bot = ChatMemoryBot(system_prompt=str_system_prompt)
         self.last_sources: List[str] = []  # stores sources for the most recent bot message
 
 
+
         # 2) Model picker — labels mapped to backend model IDs
-        MODEL_OPTIONS = [
-            ("GPT‑5 (flagship)",        "gpt-5"),
-            ("GPT‑5 mini",              "gpt-5-mini"),
-            ("GPT‑5 nano",              "gpt-5-nano"),
-            ("GPT‑5 chat (latest)",     "gpt-5-chat-latest"),
-            ("GPT‑4o (omni)",           "gpt-4o"),
-            ("GPT‑4o mini",             "gpt-4o-mini"),
-        ]
-        self.label_to_id = {label: mid for label, mid in MODEL_OPTIONS}
-        self.labels = [label for label, _ in MODEL_OPTIONS]
-        # Prefer DEFAULT_MODEL if it exists in the list; otherwise first entry
-        try:
-            initial_label = next(
-                l for l, m in MODEL_OPTIONS if m == DEFAULT_MODEL  # requires DEFAULT_MODEL to be defined
-            )
-        except StopIteration:
-            initial_label = self.labels[0]
+
+        global MODEL_OPTIONS
+        self.labels = MODEL_OPTIONS
+            
+        initial_label = MODEL_OPTIONS[0]
         self.model_var = tk.StringVar(master, value=initial_label)
         self.model_cmb = ttk.Combobox(master, state="readonly", values=self.labels, textvariable=self.model_var)
         self.model_cmb.place(x=MODEL_CMB_X, y=MODEL_CMB_Y, width=MODEL_CMB_WIDTH, height=MODEL_CMB_HEIGHT)
@@ -251,12 +268,14 @@ class ChatbotApp:
         self.src_button = tk.Button(master, text=SRC_BTN_LABEL, command=self.show_sources)
         self.src_button.place(x=SOURCES_BUTTON_X, y=SOURCES_BUTTON_Y, width=SOURCES_BUTTON_WIDTH, height=SOURCES_BUTTON_HEIGHT)
 
+
     def send_message(self, _: Optional[Any] = None) -> None:
         user_text = self.user_input.get().strip()
         if not user_text: return
         self.display_message("You", user_text)
         self.user_input.delete(0, tk.END)
         threading.Thread(target=self.get_bot_response, args=(user_text,), daemon=True).start()
+
 
     def get_bot_response(self, user_text: str):
         try:
@@ -267,11 +286,13 @@ class ChatbotApp:
             self.last_sources = []
         self.display_message("Bot", reply)
 
+
     def display_message(self, sender: str, message: str) -> None:
         self.chat_display.configure(state='normal')
         self.chat_display.insert(tk.END, f"{sender}: {message}\n\n")
         self.chat_display.configure(state='disabled')
         self.chat_display.see(tk.END)
+
 
     def show_sources(self) -> None:
         self.chat_display.configure(state='normal')
