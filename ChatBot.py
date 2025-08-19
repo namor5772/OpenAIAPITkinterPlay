@@ -63,7 +63,6 @@ class ChatMemoryBot:
         # Get all models intended for standard completions/chat into MODEL_OPTIONS array
         global MODEL_OPTIONS, DEFAULT_MODEL, BROWSE_MODEL
         models = self.client.models.list()
-
         n = 0
         # Skip anything not intended for standard completions/chat
         for m in models.data:
@@ -73,26 +72,24 @@ class ChatMemoryBot:
             if model_id.startswith("gpt-") and not("instruct" in model_id) and (model_id != "gpt-image-1"):
                 MODEL_OPTIONS.append(model_id)
                 n += 1
-
         print(f"\n=== {n} Chat Models (use /chat/completions) ===")
         n = 0
-        for cm in sorted(MODEL_OPTIONS): 
+        MODEL_OPTIONS.sort()
+        for cm in MODEL_OPTIONS: 
             n +=1
             print(f"{n}: {cm}")
-
         DEFAULT_MODEL = MODEL_OPTIONS[0]
         BROWSE_MODEL = MODEL_OPTIONS[0]
-
-        self.model = DEFAULT_MODEL
-        self.browse_model = BROWSE_MODEL
+        #self.model = DEFAULT_MODEL
+        #self.browse_model = BROWSE_MODEL
         self.max_tokens = max_tokens
 
         # tiktoken mapping with a safe fallback for new model names
         try:
-            self.encoder = tiktoken.encoding_for_model(self.browse_model)
+            self.encoder = tiktoken.encoding_for_model(BROWSE_MODEL)
         except KeyError:
             print("EXCEPTION")
-            prefers_long_ctx = any(s in self.browse_model for s in ("gpt-5", "4.1", "4o", "o4", "o3", "200k"))
+            prefers_long_ctx = any(s in BROWSE_MODEL for s in ("gpt-5", "4.1", "4o", "o4", "o3", "200k"))
             encoding_name = "o200k_base" if prefers_long_ctx else "cl100k_base"
             self.encoder = tiktoken.get_encoding(encoding_name)
 
@@ -179,11 +176,12 @@ class ChatMemoryBot:
         Decide model and tool configuration based on ENABLE_HOSTED_WEB_SEARCH.
         Ensures tools are only sent with a browsing-capable model.
         """
+        global ENABLE_HOSTED_WEB_SEARCH, DEFAULT_MODEL, BROWSE_MODEL
         use_browsing = ENABLE_HOSTED_WEB_SEARCH
         if use_browsing:
             # Browsing flow: choose browsing model and include the hosted tool
             return {
-                "model": self.browse_model,
+                "model": BROWSE_MODEL,
                 "input": self.chat_history,
                 "tools": [{"type": "web_search"}],
                 "tool_choice": "auto",
@@ -191,7 +189,7 @@ class ChatMemoryBot:
         else:
             # Non-browsing flow: default model with NO tools
             return {
-                "model": self.model,
+                "model": DEFAULT_MODEL,
                 "input": self.chat_history,
             }
 
@@ -212,7 +210,7 @@ class ChatMemoryBot:
             if ("web_search" in msg or "web_search_preview" in msg or "tools" in msg) and "not supported" in msg.lower():
                 print("[Warn] Tool/model mismatch detected. Retrying without tools on DEFAULT_MODEL.")
                 fallback_kwargs = { # type: ignore
-                    "model": self.model,
+                    "model": DEFAULT_MODEL,
                     "input": self.chat_history
                 }
                 resp = self.client.responses.create(**fallback_kwargs) # type: ignore
@@ -230,7 +228,7 @@ class ChatMemoryBot:
 class ChatbotApp:
     def __init__(self, master: tk.Tk):
         self.master = master
-        master.title("OpenAI API (Responses) — Web-enabled Chatbot")
+        self.master.title("OpenAI API (Responses) — Web-enabled Chatbot")
 
         str_system_prompt = (
             "1. You are speaking to Kenneth Mandrake, an expert AI assistant specializing in programming, "
@@ -242,14 +240,10 @@ class ChatbotApp:
             "   depending on the formality of the response."
         )
 
-
         self.bot = ChatMemoryBot(system_prompt=str_system_prompt)
         self.last_sources: List[str] = []  # stores sources for the most recent bot message
-
-
-
-        # 2) Model picker — labels mapped to backend model IDs
-
+     
+        #  creates list of available chatable models for the combobox
         global MODEL_OPTIONS
         self.labels = MODEL_OPTIONS
             
@@ -257,6 +251,7 @@ class ChatbotApp:
         self.model_var = tk.StringVar(master, value=initial_label)
         self.model_cmb = ttk.Combobox(master, state="readonly", values=self.labels, textvariable=self.model_var)
         self.model_cmb.place(x=MODEL_CMB_X, y=MODEL_CMB_Y, width=MODEL_CMB_WIDTH, height=MODEL_CMB_HEIGHT)
+        self.model_cmb.bind("<<ComboboxSelected>>", lambda event: self.select_model())
 
         self.chat_display = ScrolledText(master, wrap=tk.WORD, state='disabled', bg="lightgray")
         self.chat_display.place(x=CHAT_DISPLAY_X, y=CHAT_DISPLAY_Y, width=CHAT_DISPLAY_WIDTH, height=CHAT_DISPLAY_HEIGHT)
@@ -267,6 +262,17 @@ class ChatbotApp:
 
         self.src_button = tk.Button(master, text=SRC_BTN_LABEL, command=self.show_sources)
         self.src_button.place(x=SOURCES_BUTTON_X, y=SOURCES_BUTTON_Y, width=SOURCES_BUTTON_WIDTH, height=SOURCES_BUTTON_HEIGHT)
+
+
+    def select_model(self):
+        """
+        Update the bot's model based on the selected value in the combobox.
+        """
+        global MODEL_OPTIONS, DEFAULT_MODEL, BROWSE_MODEL
+
+        DEFAULT_MODEL = self.model_cmb.get()
+        BROWSE_MODEL = DEFAULT_MODEL  # For simplicity, use the same model for browsing
+        print(f"Model changed to: {DEFAULT_MODEL}")
 
 
     def send_message(self, _: Optional[Any] = None) -> None:
