@@ -1,130 +1,234 @@
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import ttk, messagebox
 from tkinter.scrolledtext import ScrolledText
 from pathlib import Path
+import json
+import re
 
-class SimpleTextPad(tk.Tk):
+# -----------------------
+# Layout constants (px)
+# -----------------------
+WINDOW_W = 800
+WINDOW_H = 800
+
+PADX = 10
+PADY = 10
+
+TEXT_X = 10
+TEXT_Y = 70
+TEXT_W = WINDOW_W - 20
+TEXT_H = WINDOW_H - 80
+
+STATE_FILE = ".textpad_state.json"   # stored next to this .py file
+
+class BasicTextPad(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("TextPad — Untitled")
-        self.geometry("800x600")
+        self.title("Basic TextPad")
+        self.geometry(f"{WINDOW_W}x{WINDOW_H}")
 
-        # State
-        self.current_path: Path | None = None
-        self._dirty = False  # tracks unsaved edits
+        # FIX: Create target dir where the program is RUN FROM (current working dir)
+        # If you instead want the script's folder: Path(__file__).resolve().parent
+        self.base_dir = (Path.cwd() / "system_prompts").resolve()
+        self.base_dir.mkdir(parents=True, exist_ok=True)
 
-        # Widgets
-        self.text = ScrolledText(self, wrap=tk.WORD, undo=True)
-        self.text.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 0))
+        # State file stored next to the script (not inside system_prompts)
+        self.state_path = Path(__file__).resolve().parent / STATE_FILE
 
-        btnbar = tk.Frame(self)
-        btnbar.pack(fill=tk.X, padx=8, pady=8)
+        # Tracks which base filename (stem) is currently loaded in the editor
+        self.current_name: str | None = None
 
-        tk.Button(btnbar, text="Save",  width=10, command=self.save).pack(side=tk.LEFT, padx=(0, 6))
-        tk.Button(btnbar, text="Load",  width=10, command=self.load_).pack(side=tk.LEFT, padx=6)
-        tk.Button(btnbar, text="Clear", width=10, command=self.clear).pack(side=tk.LEFT, padx=6)
-        tk.Button(btnbar, text="Exit",  width=10, command=self.on_exit).pack(side=tk.RIGHT)
+        # --- Widgets ---------------------------------------------------------
+        self.lbl_name = tk.Label(self, text="Filename (no .txt):")
+        self.lbl_name.place(x=PADX, y=PADY)
 
-        # Shortcuts
-        self.bind_all("<Control-s>", lambda e: self.save())
-        self.bind_all("<Control-o>", lambda e: self.load_())
-        self.bind_all("<Control-n>", lambda e: self.clear())
+        self.var_filename = tk.StringVar()
+        self.ent_name = tk.Entry(self, textvariable=self.var_filename)
+        self.ent_name.place(x=160, y=PADY, width=260, height=26)
 
-        # Track modifications
-        self.text.bind("<<Modified>>", self._on_modified)
+        self.btn_save = tk.Button(self, text="SAVE AS", command=self.save_as_clicked)
+        self.btn_save.place(x=430, y=PADY, width=90, height=26)
 
-        # Nice initial focus
-        self.after(50, lambda: self.text.focus_set())
+        self.btn_clear = tk.Button(self, text="CLEAR", command=self.clear_all_reset)
+        self.btn_clear.place(x=525, y=PADY, width=80, height=26)
 
-        # Intercept window close to warn on unsaved changes
-        self.protocol("WM_DELETE_WINDOW", self.on_exit)
+        self.lbl_load = tk.Label(self, text="Load file:")
+        self.lbl_load.place(x=615, y=PADY)
 
-    # --- helpers -------------------------------------------------------------
+        self.var_choice = tk.StringVar()
+        self.cbo_files = ttk.Combobox(self, textvariable=self.var_choice, state="readonly")
+        self.cbo_files.place(x=680, y=PADY, width=160, height=26)
+        self.cbo_files.bind("<Return>", self.load_selected)              # Enter loads
+        self.cbo_files.bind("<<ComboboxSelected>>", self.load_selected)  # optional immediate load
 
-    def _set_title(self, path: Path | None):
-        name = path.name if path else "Untitled"
-        dirty = " •" if self._dirty else ""
-        self.title(f"TextPad — {name}{dirty}")
+        self.txt = ScrolledText(self, wrap=tk.WORD, undo=True)
+        self.txt.place(x=TEXT_X, y=TEXT_Y, width=TEXT_W, height=TEXT_H)
 
-    def _get_text(self) -> str:
-        # 'end-1c' avoids the trailing newline Tk adds
-        return self.text.get("1.0", "end-1c")
+        # Keyboard convenience
+        self.bind_all("<Control-s>", self._accelerator_save)
+        self.bind_all("<Control-S>", self._accelerator_save)
 
-    def _confirm_discard_if_dirty(self) -> bool:
-        if not self._dirty:
-            return True
-        return messagebox.askyesno(
-            "Unsaved changes",
-            "You have unsaved changes. Discard them?",
-            icon=messagebox.WARNING
-        )
+        # NEW: Ctrl+N → New (clear editor and reset state)
+        self.bind_all("<Control-n>", self._accelerator_clear)
+        self.bind_all("<Control-N>", self._accelerator_clear)
 
-    def _on_modified(self, _evt=None):
-        # Tk toggles the modified flag internally; we reset it after reading
-        self._dirty = True
-        self._set_title(self.current_path)
-        self.text.edit_modified(False)
+        # Populate combobox with existing .txt files (no extensions)
+        self.refresh_combobox()
 
-    # --- actions -------------------------------------------------------------
+        # Try to restore last session (loads file, sets entry, selects/focuses combo)
+        self.restore_state_or_focus_editor()
 
-    def save(self):
-        if self.current_path is None:
-            path_str = filedialog.asksaveasfilename(
-                title="Save text",
-                defaultextension=".txt",
-                filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-            )
-            if not path_str:  # user cancelled
-                return
-            self.current_path = Path(path_str)
+        # Intercept window close to persist state
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    # -----------------------
+    # Helpers
+    # -----------------------
+    def list_txt_basenames(self):
+        """Return a sorted list of filenames (without .txt) in base_dir."""
+        return sorted(p.stem for p in self.base_dir.glob("*.txt"))
+
+    def refresh_combobox(self):
+        names = self.list_txt_basenames()
+        self.cbo_files["values"] = names
+
+    @staticmethod
+    def _sanitize_filename(name: str) -> str:
+        """Constrain filename to safe characters."""
+        name = name.strip()
+        name = re.sub(r"[^A-Za-z0-9._ \-]", "_", name)
+        name = re.sub(r"\s+", " ", name)
+        return name
+
+    def _select_combo_item(self, name: str):
+        """Select 'name' in the combobox and focus it, if present."""
+        values = list(self.cbo_files["values"])
+        if name in values:
+            self.cbo_files.current(values.index(name))
+        self.cbo_files.focus_set()
+
+    def _persist_state(self):
+        """Save last loaded file stem (if any) to the state file."""
+        data = {"last_file": self.current_name}
+        try:
+            self.state_path.write_text(json.dumps(data), encoding="utf-8")
+        except Exception:
+            pass  # non-fatal
+
+    def _load_state(self):
+        """Return last_file stem or None."""
+        try:
+            data = json.loads(self.state_path.read_text(encoding="utf-8"))
+            return data.get("last_file")
+        except Exception:
+            return None
+
+    # -----------------------
+    # Events / Commands
+    # -----------------------
+    def clear_all_reset(self):
+        """
+        Make [CLEAR] act like the original Ctrl+N:
+        - Empty the ScrolledText
+        - Clear the filename Entry
+        - Deselect the Combobox (no selection text)
+        - Forget the current file
+        - Return focus to the editor
+        """
+        self.txt.delete("1.0", tk.END)   # empty editor
+        self.var_filename.set("")        # clear filename Entry
+        self.var_choice.set("")          # clear combobox variable text
+        self.cbo_files.set("")           # ensure UI shows no selection
+        self.current_name = None         # forget which file was 'open'
+        self.txt.focus_set()             # caret back to editor
+
+    def _accelerator_save(self, event=None):
+        self.save_as_clicked()
+        return "break"
+
+    def _accelerator_clear(self, event=None):
+        self.clear_all_reset()
+        return "break"
+
+    def save_as_clicked(self):
+        raw = self.var_filename.get()
+        name = self._sanitize_filename(raw)
+        if not name:
+            messagebox.showwarning("Missing name", "Please type a filename (without .txt).")
+            self.ent_name.focus_set()
+            return
+
+        target = (self.base_dir / f"{name}.txt")
+        text = self.txt.get("1.0", tk.END)  # keep trailing newline
 
         try:
-            # Ensure folder exists
-            self.current_path.parent.mkdir(parents=True, exist_ok=True)
-            # Write file
-            self.current_path.write_text(self._get_text(), encoding="utf-8", newline="\n")
-            self._dirty = False
-            self._set_title(self.current_path)
-            messagebox.showinfo("Saved", f"Saved to:\n{self.current_path}")
+            if target.exists():
+                if not messagebox.askyesno(
+                    "Overwrite?",
+                    f"“{target.name}” already exists.\nDo you want to overwrite it?"
+                ):
+                    return
+            target.write_text(text, encoding="utf-8")
         except Exception as e:
-            messagebox.showerror("Save failed", f"Could not save file.\n\n{e}")
-
-    def load_(self):
-        if not self._confirm_discard_if_dirty():
+            messagebox.showerror("Save failed", f"Could not save file:\n{e}")
             return
 
-        path_str = filedialog.askopenfilename(
-            title="Load text",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-        )
-        if not path_str:
+        # Update combobox list if new
+        current = list(self.cbo_files["values"])
+        if name not in current:
+            current.append(name)
+            current.sort()
+            self.cbo_files["values"] = current
+
+        # Mark as the current open file
+        self.current_name = name
+
+        # Reflect in UI: select/focus combo and set entry
+        self._select_combo_item(name)
+        self.var_filename.set(name)
+
+        messagebox.showinfo("Saved", f"Saved to:\n{target}")
+
+    def load_selected(self, event=None):
+        name = self.var_choice.get().strip()
+        if not name:
+            return
+        path = self.base_dir / f"{name}.txt"
+        if not path.exists():
+            messagebox.showerror("Not found", f"File not found:\n{path}")
             return
 
         try:
-            path = Path(path_str)
-            text = path.read_text(encoding="utf-8")
-            self.text.delete("1.0", tk.END)
-            self.text.insert("1.0", text)
-            self.current_path = path
-            self._dirty = False
-            self._set_title(self.current_path)
-        except UnicodeDecodeError:
-            messagebox.showerror("Load failed", "File is not valid UTF-8 text.")
+            content = path.read_text(encoding="utf-8")
         except Exception as e:
-            messagebox.showerror("Load failed", f"Could not load file.\n\n{e}")
-
-    def clear(self):
-        if self._get_text() and not self._confirm_discard_if_dirty():
+            messagebox.showerror("Load failed", f"Could not read file:\n{e}")
             return
-        self.text.delete("1.0", tk.END)
-        self.current_path = None
-        self._dirty = False
-        self._set_title(self.current_path)
 
-    def on_exit(self):
-        if self._dirty and not self._confirm_discard_if_dirty():
-            return
+        self.txt.delete("1.0", tk.END)
+        self.txt.insert(tk.END, content)
+
+        # Update state/UI
+        self.current_name = name
+        self.var_filename.set(name)
+        self._select_combo_item(name)
+        # NOTE: Per your request, keep focus on the combobox after restore/load.
+
+    def restore_state_or_focus_editor(self):
+        """On startup, try to restore last file; else just show empty editor.
+           Always give focus to the text area for immediate typing."""
+        last = self._load_state()
+        self.refresh_combobox()
+        if last and (self.base_dir / f"{last}.txt").exists():
+            # Select it in combo and load its content
+            self.var_choice.set(last)
+            self.load_selected()
+        # Always focus the text area on startup
+        self.txt.focus_set()
+
+    def on_close(self):
+        self._persist_state()
         self.destroy()
 
 if __name__ == "__main__":
-    SimpleTextPad().mainloop()
+    app = BasicTextPad()
+    app.mainloop()
