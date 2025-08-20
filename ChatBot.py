@@ -53,6 +53,7 @@ ENABLE_HOSTED_WEB_SEARCH = True  # Turn this on to use the hosted web search too
 DEFAULT_MODEL = "" # Non-browsing model (or used without tools)
 BROWSE_MODEL = "" # Browsing-capable model for hosted web search "gpt-4o"
 MODEL_OPTIONS = []
+str_system_prompt = "You are a helpful AI assistant. Answer questions to the best of your ability."
 
 URL_REGEX = re.compile(
     r"(https?://[^\s)]+)",
@@ -209,6 +210,13 @@ class ChatMemoryBot:
 
     def ask(self, user_input: str) -> Tuple[str, List[str]]:
         print("\nASKING AI")
+
+        # Obtain the system prompt string and create the message
+        global str_system_prompt
+        str_system_prompt = app.txt.get("1.0", tk.END).strip()  # Get the system prompt from the text area
+        self.chat_history[0] = {"role": "system", "content": str_system_prompt}
+        print(f"System prompt:\n{self.chat_history}")
+
         self.chat_history.append({"role": "user", "content": user_input})
         self._trim_history_if_needed()
 
@@ -284,7 +292,7 @@ class ChatbotApp:
         self.btn_clear = tk.Button(master, text="CLEAR", command=self.clear_all_reset)
         self.btn_clear.place(x=WINDOW_WIDTH_actual-97, y=PADY, width=70, height=26)
 
-        self.btn_clear = tk.Button(master, text="DELETE", command=self.clear_all_reset)
+        self.btn_clear = tk.Button(master, text="DELETE", command=self.delete_file)
         self.btn_clear.place(x=WINDOW_WIDTH_actual-97-80, y=PADY, width=70, height=26)
 
         self.txt = ScrolledText(master, wrap=tk.WORD, undo=True)
@@ -389,13 +397,55 @@ class ChatbotApp:
         self.current_name = None         # forget which file was 'open'
         self.txt.focus_set()             # caret back to editor
 
+
+    def delete_file(self):
+        """Delete the current file, clear the text area, and update combobox list."""
+        if not self.current_name:
+            messagebox.showwarning("No file", "No file is currently open to delete.")
+            return
+
+        # Confirm deletion
+        file_to_delete = self.base_dir / f"{self.current_name}.txt"
+        if not file_to_delete.exists():
+            messagebox.showerror("File not found", f"Could not find {file_to_delete.name} to delete.")
+            return
+
+        # Ask user to confirm
+        confirm = messagebox.askyesno(
+            "Confirm Deletion",
+            f"Are you sure you want to delete the file:\n{file_to_delete.name}"
+        )
+        if not confirm:
+            return
+
+        # Delete the file
+        try:
+            file_to_delete.unlink()  # Delete the file
+            messagebox.showinfo("File Deleted", f"File {file_to_delete.name} has been deleted.")
+        except Exception as e:
+            messagebox.showerror("Delete Failed", f"Failed to delete the file: {e}")
+            return
+
+        # Update the Combobox (remove the deleted file from the list)
+        self.refresh_combobox()
+
+        self.txt.delete("1.0", tk.END)   # empty editor
+        self.var_filename.set("")        # clear filename Entry
+        self.var_choice.set("")          # clear combobox variable text
+        self.cbo_files.set("")           # ensure UI shows no selection
+        self.current_name = None         # forget which file was 'open'
+        self.txt.focus_set()             # caret back to editor
+
+
     def _accelerator_save(self, event=None):
         self.save_as_clicked()
         return "break"
 
+
     def _accelerator_clear(self, event=None):
         self.clear_all_reset()
         return "break"
+
 
     def save_as_clicked(self):
         raw = self.var_filename.get()
