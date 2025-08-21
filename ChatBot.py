@@ -24,16 +24,17 @@ TEXT_W = WINDOW_W - 20
 TEXT_H = WINDOW_HEIGHT - 80
 
 STATE_FILE = ".textpad_state.json"   # stored next to this .py file
+CHAT_AUTOSAVE_FILE = "_autosave.chat.json"   # lives in base_dir (system_prompts folder)
 
 MODEL_CMB_X = 57
 MODEL_CMB_Y = 10
-MODEL_CMB_WIDTH = 160
+MODEL_CMB_WIDTH = 180
 MODEL_CMB_HEIGHT = 25
 
 CHAT_DISPLAY_X = 10
-CHAT_DISPLAY_Y = 45
+CHAT_DISPLAY_Y = 45+35
 CHAT_DISPLAY_WIDTH = WINDOW_WIDTH - 20
-CHAT_DISPLAY_HEIGHT = WINDOW_HEIGHT - 90  # slightly shorter to make room for the Sources button row
+CHAT_DISPLAY_HEIGHT = WINDOW_HEIGHT - 90-35  # slightly shorter to make room for the Sources button row
 
 INPUT_X = 10
 INPUT_Y = WINDOW_HEIGHT - 35
@@ -276,6 +277,7 @@ class ChatbotApp:
 
         # Tracks which base filename (stem) is currently loaded in the editor
         self.current_name: str | None = None
+        self.current_chat_name: str | None = None
 
         # --- Widgets ---------------------------------------------------------
         self.btn_save = tk.Button(master, text="SAVE AS", command=self.save_as_clicked)
@@ -294,11 +296,11 @@ class ChatbotApp:
         self.cbo_files.bind("<Return>", self.load_selected)              # Enter loads
         self.cbo_files.bind("<<ComboboxSelected>>", self.load_selected)  # optional immediate load
 
+        self.btn_delete = tk.Button(master, text="DELETE", command=self.delete_file)
+        self.btn_delete.place(x=WINDOW_WIDTH_actual-177, y=PADY, width=70, height=26)
+
         self.btn_clear = tk.Button(master, text="CLEAR", command=self.clear_all_reset)
         self.btn_clear.place(x=WINDOW_WIDTH_actual-97, y=PADY, width=70, height=26)
-
-        self.btn_clear = tk.Button(master, text="DELETE", command=self.delete_file)
-        self.btn_clear.place(x=WINDOW_WIDTH_actual-177, y=PADY, width=70, height=26)
 
         self.txt = ScrolledText(master, wrap=tk.WORD, undo=True)
         self.txt.place(x=PADX, y=CHAT_DISPLAY_Y, width=WINDOW_W - 20, height=CHAT_DISPLAY_HEIGHT+34)
@@ -334,8 +336,28 @@ class ChatbotApp:
         self.model_cmb.place(x=MODEL_CMB_X, y=MODEL_CMB_Y, width=MODEL_CMB_WIDTH, height=MODEL_CMB_HEIGHT)
         self.model_cmb.bind("<<ComboboxSelected>>", lambda event: self.select_model())
 
-        self.btn_clear = tk.Button(master, text="NEW CHAT", command=self.new_chat)
-        self.btn_clear.place(x=WINDOW_WIDTH-97, y=PADY, width=70, height=26)
+        self.btn_newChat = tk.Button(master, text="NEW CHAT", command=self.new_chat)
+        self.btn_newChat.place(x=WINDOW_WIDTH-97, y=PADY, width=70, height=26)
+
+        self.btn_saveChat = tk.Button(master, text="SAVE AS", command=self.saveChat_as_clicked)
+        self.btn_saveChat.place(x=10, y=PADY+35, width=70, height=26)
+
+        self.var_filenameChat = tk.StringVar()
+        self.ent_nameChat = tk.Entry(master, textvariable=self.var_filenameChat)
+        self.ent_nameChat.place(x=10+80, y=PADY+35, width=100, height=26)
+
+        self.lbl_loadChat = tk.Label(master, text="Load :")
+        self.lbl_loadChat.place(x=10+200, y=PADY+2+35)
+
+        self.var_choiceChat = tk.StringVar()
+        self.cbo_filesChat = ttk.Combobox(master, textvariable=self.var_choiceChat, state="readonly")
+        self.cbo_filesChat.place(x=10+240, y=PADY+35, width=100, height=26)
+        self.cbo_filesChat.bind("<Return>", self.load_selectedChat)              # Enter loads
+        self.cbo_filesChat.bind("<<ComboboxSelected>>", self.load_selectedChat)  # optional immediate load
+        self.refresh_comboboxChat()
+
+        self.btn_deleteChat = tk.Button(master, text="DELETE", command=self.delete_fileChat)
+        self.btn_deleteChat.place(x=WINDOW_WIDTH-97, y=PADY+35, width=70, height=26)
 
         self.chat_display = ScrolledText(master, wrap=tk.WORD, state='disabled', bg="lightgray")
         self.chat_display.place(x=CHAT_DISPLAY_X, y=CHAT_DISPLAY_Y, width=CHAT_DISPLAY_WIDTH, height=CHAT_DISPLAY_HEIGHT)
@@ -346,6 +368,156 @@ class ChatbotApp:
 
         self.src_button = tk.Button(master, text=SRC_BTN_LABEL, command=self.show_sources)
         self.src_button.place(x=SOURCES_BUTTON_X, y=SOURCES_BUTTON_Y, width=SOURCES_BUTTON_WIDTH, height=SOURCES_BUTTON_HEIGHT)
+
+        # ... existing end-of-__init__ code ...
+        self.restore_chat_after_init()
+
+
+
+    # -----------------------
+    # Persist/restore helpers
+    # -----------------------
+    def _serialize_current_chat(self) -> Dict[str, Any]:
+        """
+        Build the same payload your saveChat_as_clicked() writes,
+        suitable for autosave or manual save.
+        """
+        model_in_use = self.model_cmb.get() or getattr(self.bot, "browse_model", "")
+        browse_enabled = ENABLE_HOSTED_WEB_SEARCH
+        system_prompt_name = self.current_name  # may be None
+        system_prompt_text = self.txt.get("1.0", tk.END)
+        chat_display_text = self.chat_display.get("1.0", tk.END)
+        chat_history = list(self.bot.chat_history)
+
+        return {
+            "meta": {"version": 1},
+            "saved_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+            "model": model_in_use,
+            "browse_enabled": browse_enabled,
+            "system_prompt_name": system_prompt_name,
+            "system_prompt_text": system_prompt_text,
+            "chat_display_plaintext": chat_display_text,
+            "chat_history": chat_history,
+        }
+
+    def _apply_chat_payload(self, data: Dict[str, Any]) -> None:
+        """
+        Restore a chat session from a parsed payload dict (as saved by _serialize_current_chat()).
+        Used by manual load and autosave restore.
+        """
+        # 1) Fields
+        saved_model = data.get("model", "")
+        saved_browse = data.get("browse_enabled", None)
+        sp_name      = data.get("system_prompt_name")
+        sp_text      = data.get("system_prompt_text", "")
+        transcript   = data.get("chat_display_plaintext", "")
+        hist         = data.get("chat_history", [])
+
+        # 2) Model restore if available
+        if saved_model and (saved_model in list(self.model_cmb["values"])):
+            self.model_var.set(saved_model)
+            self.select_model()  # keeps bot.* models in sync
+
+        # 3) Browse toggle
+        if saved_browse is not None:
+            global ENABLE_HOSTED_WEB_SEARCH
+            ENABLE_HOSTED_WEB_SEARCH = bool(saved_browse)
+
+        # 4) System prompt editor + filename reflection (if present)
+        self.txt.delete("1.0", tk.END)
+        self.txt.insert(tk.END, sp_text or "")
+
+        if sp_name:
+            prompt_names = list(self.cbo_files["values"])
+            if sp_name in prompt_names:
+                self.var_choice.set(sp_name)
+                self._select_combo_item(sp_name)
+                self.var_filename.set(sp_name)
+                self.current_name = sp_name
+            else:
+                self.var_choice.set("")
+                self.cbo_files.set("")
+                self.var_filename.set("")
+                self.current_name = None
+
+        # 5) Transcript
+        self.chat_display.configure(state='normal')
+        self.chat_display.delete("1.0", tk.END)
+        self.chat_display.insert(tk.END, transcript or "")
+        self.chat_display.configure(state='disabled')
+        self.chat_display.see(tk.END)
+
+        # 6) Structured history + bot system prompt
+        if isinstance(hist, list) and all(isinstance(m, dict) for m in hist):
+            self.bot.chat_history = hist
+            if hist and isinstance(hist[0], dict) and hist[0].get("role") == "system":
+                self.bot.str_system_prompt = hist[0].get("content", self.bot.str_system_prompt)
+        else:
+            self.bot.chat_history = [
+                {"role": "system", "content": sp_text or self.bot.str_system_prompt}
+            ]
+
+    def _persist_state(self):
+        """
+        Save both the last system prompt filename (if any) and last chat name (if any).
+        """
+        data = {
+            "last_file": self.current_name,
+            "last_chat": self.current_chat_name,
+        }
+        try:
+            self.state_path.write_text(json.dumps(data), encoding="utf-8")
+        except Exception:
+            pass  # non-fatal
+
+    def _load_state(self) -> Dict[str, Optional[str]]:
+        """
+        Load state file robustly. Returns dict with keys "last_file" and "last_chat".
+        Backward compatible with older state that only had last_file.
+        """
+        try:
+            data = json.loads(self.state_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {
+                    "last_file": data.get("last_file"),
+                    "last_chat": data.get("last_chat"),
+                }
+        except Exception:
+            pass
+        return {"last_file": None, "last_chat": None}
+
+
+    # -----------------------
+    # Chat session helpers
+    # -----------------------
+    def list_chat_basenames(self) -> list[str]:
+        """
+        Return a sorted list of saved chat session names (without extension).
+        Looks for files named *.chat.json in base_dir.
+        """
+        names: list[str] = []
+        for p in self.base_dir.glob("*.chat.json"):
+            # strip the trailing ".chat.json" from the filename
+            fname = p.name
+            if fname.endswith(".chat.json"):
+                names.append(fname[:-10])  # remove .chat.json (10 chars)
+        names.sort()
+        return names
+
+
+    def refresh_comboboxChat(self):
+        """Populate chat session combobox with the names of saved sessions."""
+        names = self.list_chat_basenames()
+        self.cbo_filesChat["values"] = names
+
+
+    def _select_combo_itemChat(self, name: str):
+        """Select 'name' in the chat combobox and focus it, if present."""
+        values = list(self.cbo_filesChat["values"])
+        if name in values:
+            self.cbo_filesChat.current(values.index(name))
+        self.cbo_filesChat.focus_set()
+
 
 
     def new_chat(self) -> None:
@@ -481,6 +653,76 @@ class ChatbotApp:
         self.txt.focus_set()             # caret back to editor
 
 
+    def delete_fileChat(self):
+        """
+        Delete the selected (or current) saved chat session (*.chat.json) from base_dir.
+        Refreshes the chat combobox, clears UI/state if the deleted session was loaded,
+        and attempts to select a remaining session if available.
+        """
+        # 1) Determine which chat session to delete
+        name = (self.var_choiceChat.get() or (self.current_chat_name or "")).strip()
+        if not name:
+            messagebox.showwarning("No chat selected", "Select a chat session in the list first.")
+            return
+
+        target = self.base_dir / f"{name}.chat.json"
+        if not target.exists():
+            messagebox.showerror("Not found", f"Chat session file not found:\n{target}")
+            return
+
+        # 2) Confirm deletion
+        if not messagebox.askyesno(
+            "Confirm Deletion",
+            f"Are you sure you want to delete the chat session:\n{target.name}"
+        ):
+            return
+
+        # 3) Delete the file
+        try:
+            target.unlink()
+        except Exception as e:
+            messagebox.showerror("Delete Failed", f"Failed to delete the chat session:\n{e}")
+            return
+
+        # 4) Refresh the chat session combobox
+        self.refresh_comboboxChat()
+
+        # 5) If we just deleted the currently loaded chat, clear UI/state
+        if self.current_chat_name == name or self.var_choiceChat.get().strip() == name:
+            # Clear combobox/entry state for chats
+            self.current_chat_name = None
+            self.var_filenameChat.set("")
+            self.var_choiceChat.set("")
+            self.cbo_filesChat.set("")
+
+            # Clear transcript
+            self.chat_display.configure(state='normal')
+            self.chat_display.delete("1.0", tk.END)
+            self.chat_display.configure(state='disabled')
+
+            # Clear last sources and pending input
+            self.last_sources = []
+            self.user_input.delete(0, tk.END)
+
+            # Reset the bot to a single system message using current editor text
+            current_sp = self.txt.get("1.0", tk.END).strip() or self.bot.str_system_prompt
+            self.bot.reset(system_prompt=current_sp)
+
+        # 6) Try to select another existing chat (if any remain)
+        remaining = list(self.cbo_filesChat["values"])
+        if remaining:
+            # pick the last one alphabetically (or any policy you prefer)
+            next_name = remaining[-1]
+            self.var_choiceChat.set(next_name)
+            self._select_combo_itemChat(next_name)
+        else:
+            # No remaining chats; just focus the chat list to signal completion
+            self.cbo_filesChat.focus_set()
+
+        self._persist_state()
+        messagebox.showinfo("Deleted", f"Deleted chat session:\n{target}")
+
+
     def _accelerator_save(self, event: Optional[tk.Event] = None) -> str:
         self.save_as_clicked()
         return "break"
@@ -531,6 +773,85 @@ class ChatbotApp:
         messagebox.showinfo("Saved", f"Saved to:\n{target}")
 
 
+    def saveChat_as_clicked(self):
+        """
+        Save the current chat session to a JSON file in the same folder as system prompts.
+        File name is taken from ent_nameChat (without extension).
+        Saved fields:
+          - model in use
+          - whether hosted web search is enabled
+          - system prompt filename (if loaded) and text
+          - visible chat transcript (plaintext)
+          - structured chat_history array from the bot
+        """
+        # 1) Validate and sanitize the target name
+        raw = self.var_filenameChat.get()
+        name = self._sanitize_filename(raw)
+        if not name:
+            messagebox.showwarning("Missing name", "Please type a chat session name.")
+            self.ent_nameChat.focus_set()
+            return
+
+        # 2) Build the target path: <base_dir>/<name>.chat.json
+        target = (self.base_dir / f"{name}.chat.json")
+
+        # 3) Collect the data we want to persist
+        # Current model (both app & bot kept in sync by select_model)
+        model_in_use = self.model_cmb.get() or getattr(self.bot, "browse_model", "")
+        # Whether hosted web search is enabled
+        browse_enabled = ENABLE_HOSTED_WEB_SEARCH
+        # System prompt info (filename + text)
+        system_prompt_name = self.current_name  # may be None if not saved/loaded
+        system_prompt_text = self.txt.get("1.0", tk.END)
+
+        # Visible chat as plaintext
+        chat_display_text = self.chat_display.get("1.0", tk.END)
+
+        # Structured chat history from bot
+        chat_history = list(self.bot.chat_history)
+
+        payload = {
+            "meta": {"version": 1},
+            "saved_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+            "model": model_in_use,
+            "browse_enabled": browse_enabled,
+            "system_prompt_name": system_prompt_name,
+            "system_prompt_text": system_prompt_text,
+            "chat_display_plaintext": chat_display_text,
+            "chat_history": chat_history,
+        }
+
+        # 4) Write file (with overwrite confirmation)
+        try:
+            if target.exists():
+                if not messagebox.askyesno(
+                    "Overwrite?",
+                    f"“{target.name}” already exists.\nDo you want to overwrite it?"
+                ):
+                    return
+
+            target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        except Exception as e:
+            messagebox.showerror("Save failed", f"Could not save chat session:\n{e}")
+            return
+
+        # 5) Update the chat combobox if new, then select & focus it
+        current = list(self.cbo_filesChat["values"])
+        if name not in current:
+            current.append(name)
+            current.sort()
+            self.cbo_filesChat["values"] = current
+
+        self.var_choiceChat.set(name)
+        self._select_combo_itemChat(name)
+        self.var_filenameChat.set(name)
+
+        self.current_chat_name = name
+        self._persist_state()
+        messagebox.showinfo("Saved", f"Chat session saved to:\n{target}")
+
+
     def load_selected(self, event: Optional[tk.Event] = None) -> None:
         name = self.var_choice.get().strip()
         if not name:
@@ -556,6 +877,34 @@ class ChatbotApp:
         # NOTE: Per your request, keep focus on the combobox after restore/load.
 
 
+    def load_selectedChat(self, event: Optional[tk.Event] = None) -> None:
+        name = self.var_choiceChat.get().strip()
+        if not name:
+            return
+
+        path = self.base_dir / f"{name}.chat.json"
+        if not path.exists():
+            messagebox.showerror("Not found", f"Chat session not found:\n{path}")
+            return
+
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            messagebox.showerror("Load failed", f"Invalid chat session file:\n{e}")
+            return
+
+        self._apply_chat_payload(data)
+
+        # Mark current chat name and mirror in UI
+        self.current_chat_name = name
+        self.var_filenameChat.set(name)
+        self.var_choiceChat.set(name)
+        self._select_combo_itemChat(name)
+
+        self._persist_state()
+        messagebox.showinfo("Loaded", f"Chat session loaded:\n{path}")
+
+
     def restore_state_or_focus_editor(self):
         """On startup, try to restore last file; else just show empty editor.
         Always give focus to the text area for immediate typing."""
@@ -569,8 +918,64 @@ class ChatbotApp:
         self.txt.focus_set()
 
 
+    def restore_chat_after_init(self):
+        """
+        After models/bot/UI are ready, try to restore the last chat if present; else autosave.
+        """
+        # Refresh chat list in case files changed
+        self.refresh_comboboxChat()
+
+        state = self._load_state()
+        last_chat = state.get("last_chat") if isinstance(state, dict) else None
+
+        # 1) Try last named chat
+        if last_chat:
+            path = self.base_dir / f"{last_chat}.chat.json"
+            if path.exists():
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    self._apply_chat_payload(data)
+                    self.current_chat_name = last_chat
+                    self.var_filenameChat.set(last_chat)
+                    self.var_choiceChat.set(last_chat)
+                    self._select_combo_itemChat(last_chat)
+                    return
+                except Exception as e:
+                    print(f"[Restore] Failed to load last_chat: {e}")
+
+        # 2) Fall back to autosave
+        autosave_path = self.base_dir / CHAT_AUTOSAVE_FILE
+        if autosave_path.exists():
+            try:
+                data = json.loads(autosave_path.read_text(encoding="utf-8"))
+                self._apply_chat_payload(data)
+                # Do not set current_chat_name here (autosave is unnamed by design)
+                self.var_filenameChat.set("")
+                self.var_choiceChat.set("")
+                self.cbo_filesChat.set("")
+                print("[Restore] Restored from autosave.")
+                return
+            except Exception as e:
+                print(f"[Restore] Failed to load autosave: {e}")
+
+        # 3) Nothing to restore: leave UI as-is
+        print("[Restore] No last chat or autosave found.")
+
+
     def on_close(self):
+        # 1) Autosave current chat to _autosave.chat.json
+        try:
+            payload = self._serialize_current_chat()
+            autosave_path = self.base_dir / CHAT_AUTOSAVE_FILE
+            autosave_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as e:
+            # Non-fatal; continue shutdown
+            print(f"[Autosave] Failed: {e}")
+
+        # 2) Persist state (last_file + last_chat)
         self._persist_state()
+
+        # 3) Exit
         self.master.destroy()
 
 
