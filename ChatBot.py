@@ -25,7 +25,7 @@ TEXT_H = WINDOW_HEIGHT - 80
 
 STATE_FILE = ".textpad_state.json"   # stored next to this .py file
 
-MODEL_CMB_X = 100
+MODEL_CMB_X = 57
 MODEL_CMB_Y = 10
 MODEL_CMB_WIDTH = 160
 MODEL_CMB_HEIGHT = 25
@@ -108,6 +108,22 @@ class ChatMemoryBot:
 
         self.chat_history: List[Dict[str, str]] = [{"role": "system", "content": self.str_system_prompt}]
         print(f"System prompt:\n{self.chat_history}")
+
+
+    def reset(self, system_prompt: Optional[str] = None) -> None:
+        """
+        Reset the conversation to a fresh state containing only the system message.
+        If system_prompt is provided, it replaces the current system prompt and is used
+        as the sole message in chat_history.
+        """
+        if system_prompt is None:
+            system_prompt = self.str_system_prompt
+        else:
+            self.str_system_prompt = system_prompt
+
+        self.chat_history = [{"role": "system", "content": self.str_system_prompt}]
+        print("[Bot] Chat history reset to system-only state.")
+
 
 
     def _count_tokens(self, messages: List[Dict[str, str]]) -> int:
@@ -282,7 +298,7 @@ class ChatbotApp:
         self.btn_clear.place(x=WINDOW_WIDTH_actual-97, y=PADY, width=70, height=26)
 
         self.btn_clear = tk.Button(master, text="DELETE", command=self.delete_file)
-        self.btn_clear.place(x=WINDOW_WIDTH_actual-97-80, y=PADY, width=70, height=26)
+        self.btn_clear.place(x=WINDOW_WIDTH_actual-177, y=PADY, width=70, height=26)
 
         self.txt = ScrolledText(master, wrap=tk.WORD, undo=True)
         self.txt.place(x=PADX, y=CHAT_DISPLAY_Y, width=WINDOW_W - 20, height=CHAT_DISPLAY_HEIGHT+34)
@@ -310,10 +326,16 @@ class ChatbotApp:
         self.labels = MODEL_OPTIONS
         self.initial_label = MODEL_OPTIONS[0]
 
+        self.lbl_model = tk.Label(master, text="Model :")
+        self.lbl_model.place(x=10, y=PADY+1)
+     
         self.model_var = tk.StringVar(master, value=self.initial_label)
         self.model_cmb = ttk.Combobox(master, state="readonly", values=self.labels, textvariable=self.model_var)
-        self.model_cmb.place(x=MODEL_CMB_X+100, y=MODEL_CMB_Y, width=MODEL_CMB_WIDTH, height=MODEL_CMB_HEIGHT)
+        self.model_cmb.place(x=MODEL_CMB_X, y=MODEL_CMB_Y, width=MODEL_CMB_WIDTH, height=MODEL_CMB_HEIGHT)
         self.model_cmb.bind("<<ComboboxSelected>>", lambda event: self.select_model())
+
+        self.btn_clear = tk.Button(master, text="NEW CHAT", command=self.new_chat)
+        self.btn_clear.place(x=WINDOW_WIDTH-97, y=PADY, width=70, height=26)
 
         self.chat_display = ScrolledText(master, wrap=tk.WORD, state='disabled', bg="lightgray")
         self.chat_display.place(x=CHAT_DISPLAY_X, y=CHAT_DISPLAY_Y, width=CHAT_DISPLAY_WIDTH, height=CHAT_DISPLAY_HEIGHT)
@@ -324,6 +346,40 @@ class ChatbotApp:
 
         self.src_button = tk.Button(master, text=SRC_BTN_LABEL, command=self.show_sources)
         self.src_button.place(x=SOURCES_BUTTON_X, y=SOURCES_BUTTON_Y, width=SOURCES_BUTTON_WIDTH, height=SOURCES_BUTTON_HEIGHT)
+
+
+    def new_chat(self) -> None:
+        """
+        Clear the visible chat window and reset the bot's chat history to a single
+        system message. The system prompt used is whatever is currently in the
+        left-hand editor (self.txt); if empty, we keep the bot's existing prompt.
+        """
+        # 1) Decide which system prompt to use
+        new_system_prompt = self.txt.get("1.0", tk.END).strip()
+        if not new_system_prompt:
+            new_system_prompt = self.bot.str_system_prompt  # keep existing if editor is empty
+
+        # 2) Reset the bot to a fresh conversation
+        self.bot.reset(system_prompt=new_system_prompt)
+
+        # 3) Clear the chat display
+        self.chat_display.configure(state='normal')
+        self.chat_display.delete("1.0", tk.END)
+        self.chat_display.configure(state='disabled')
+
+        # 4) Clear last sources and any pending input
+        self.last_sources = []
+        self.user_input.delete(0, tk.END)
+
+        # 5) (Optional) Provide a small visual cue that a new chat began
+        self.chat_display.configure(state='normal')
+        self.chat_display.insert(tk.END, "— New chat started —\n\n")
+        self.chat_display.configure(state='disabled')
+        self.chat_display.see(tk.END)
+
+        print("[UI] New chat started. System prompt in use:")
+        print(new_system_prompt)
+
 
     # -----------------------
     # Helpers
@@ -522,11 +578,13 @@ class ChatbotApp:
         """
         Update the bot's model based on the selected value in the combobox.
         """
-        global MODEL_OPTIONS
-        
-        self.default_model = self.model_cmb.get()
-        self.browse_model = self.default_model  # For simplicity, use the same model for browsing
-        print(f"Model changed to: {self.default_model}")
+        chosen = self.model_cmb.get()
+        # Update both the app and the bot so they stay in sync
+        self.default_model = chosen
+        self.browse_model = chosen
+        self.bot.default_model = chosen
+        self.bot.browse_model = chosen # For simplicity, use the same model for browsing
+        print(f"Model changed to: {chosen}")
 
 
     def send_message(self, _: Optional[Any] = None) -> None:
