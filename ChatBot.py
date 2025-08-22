@@ -280,12 +280,13 @@ class ChatbotApp:
         self.current_chat_name: str | None = None
 
         # --- Widgets ---------------------------------------------------------
-        self.btn_save = tk.Button(master, text="SAVE AS", command=self.save_as_clicked)
-        self.btn_save.place(x=PADX, y=PADY, width=70, height=26)
-
+        self.lbl_save = tk.Label(master, text="Save as :")
+        self.lbl_save.place(x=PADX, y=PADY+3) # small +3 vertical nudge to align with the Entry control
         self.var_filename = tk.StringVar()
         self.ent_name = tk.Entry(master, textvariable=self.var_filename)
         self.ent_name.place(x=PADX+80, y=PADY, width=100, height=26)
+        self.ent_name.bind("<Return>", lambda e: self.save_as_clicked())
+        self.ent_name.bind("<FocusOut>", lambda e: self.var_filename.get().strip() and self.save_as_clicked())
 
         self.lbl_load = tk.Label(master, text="Load :")
         self.lbl_load.place(x=PADX+200, y=PADY+2)
@@ -339,12 +340,13 @@ class ChatbotApp:
         self.btn_newChat = tk.Button(master, text="NEW CHAT", command=self.new_chat)
         self.btn_newChat.place(x=WINDOW_WIDTH-97, y=PADY, width=70, height=26)
 
-        self.btn_saveChat = tk.Button(master, text="SAVE AS", command=self.saveChat_as_clicked)
-        self.btn_saveChat.place(x=10, y=PADY+35, width=70, height=26)
-
+        self.lbl_saveChat = tk.Label(master, text="Save as :")
+        self.lbl_saveChat.place(x=10, y=PADY+2+35)
         self.var_filenameChat = tk.StringVar()
         self.ent_nameChat = tk.Entry(master, textvariable=self.var_filenameChat)
-        self.ent_nameChat.place(x=10+80, y=PADY+35, width=100, height=26)
+        self.ent_nameChat.place(x=10+53, y=PADY+35, width=100, height=26)
+        self.ent_nameChat.bind("<Return>", lambda e: self.saveChat_as_clicked())
+        self.ent_nameChat.bind("<FocusOut>", lambda e: self.var_filenameChat.get().strip() and self.saveChat_as_clicked())
 
         self.lbl_loadChat = tk.Label(master, text="Load :")
         self.lbl_loadChat.place(x=10+200, y=PADY+2+35)
@@ -371,11 +373,9 @@ class ChatbotApp:
 
         # Make all buttons keyboard-accessible
         for b in (
-            self.btn_save,
             self.btn_delete,
             self.btn_clear,
             self.btn_newChat,
-            self.btn_saveChat,
             self.btn_deleteChat,
             self.src_button,
         ):
