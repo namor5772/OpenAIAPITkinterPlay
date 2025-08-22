@@ -10,8 +10,8 @@ from typing import List, Dict, Any, Optional, Tuple, Set
 import threading
 
 # --- GUI Layout Constants ---
-WINDOW_WIDTH = 600
-WINDOW_HEIGHT = 800
+WINDOW_WIDTH = 1000
+WINDOW_HEIGHT = 950
 WINDOW_W = 600
 WINDOW_WIDTH_actual = WINDOW_WIDTH + WINDOW_W
 
@@ -265,7 +265,7 @@ class ChatMemoryBot:
 class ChatbotApp:
     def __init__(self, master: tk.Tk):
         self.master = master
-        self.master.title("OpenAI API (Responses) — Web-enabled Chatbot")
+        self.master.title("OpenAI Responses-API Chatbot - https://github.com/namor5772/OpenAIAPITkinterPlay/blob/main/ChatBot.py")
 
         # FIX: Create target dir where the program is RUN FROM (current working dir)
         # If you instead want the script's folder: Path(__file__).resolve().parent
@@ -302,7 +302,7 @@ class ChatbotApp:
         self.btn_clear = tk.Button(master, text="CLEAR", command=self.clear_all_reset)
         self.btn_clear.place(x=WINDOW_WIDTH_actual-97, y=PADY, width=70, height=26)
 
-        self.txt = ScrolledText(master, wrap=tk.WORD, undo=True)
+        self.txt = ScrolledText(master, wrap=tk.WORD, undo=True, bg="lightgrey")
         self.txt.place(x=PADX, y=CHAT_DISPLAY_Y, width=WINDOW_W - 20, height=CHAT_DISPLAY_HEIGHT+34)
 
         # Keyboard convenience  
@@ -359,7 +359,7 @@ class ChatbotApp:
         self.btn_deleteChat = tk.Button(master, text="DELETE", command=self.delete_fileChat)
         self.btn_deleteChat.place(x=WINDOW_WIDTH-97, y=PADY+35, width=70, height=26)
 
-        self.chat_display = ScrolledText(master, wrap=tk.WORD, state='disabled', bg="lightgray")
+        self.chat_display = ScrolledText(master, wrap=tk.WORD, state='disabled', bg="white")
         self.chat_display.place(x=CHAT_DISPLAY_X, y=CHAT_DISPLAY_Y, width=CHAT_DISPLAY_WIDTH, height=CHAT_DISPLAY_HEIGHT)
 
         self.user_input = tk.Entry(master, bg="lightgray")
@@ -368,6 +368,18 @@ class ChatbotApp:
 
         self.src_button = tk.Button(master, text=SRC_BTN_LABEL, command=self.show_sources)
         self.src_button.place(x=SOURCES_BUTTON_X, y=SOURCES_BUTTON_Y, width=SOURCES_BUTTON_WIDTH, height=SOURCES_BUTTON_HEIGHT)
+
+        # Make all buttons keyboard-accessible
+        for b in (
+            self.btn_save,
+            self.btn_delete,
+            self.btn_clear,
+            self.btn_newChat,
+            self.btn_saveChat,
+            self.btn_deleteChat,
+            self.src_button,
+        ):
+            self._keyboardize_button(b)
 
         # ... existing end-of-__init__ code ...
         self.restore_chat_after_init()
@@ -457,6 +469,10 @@ class ChatbotApp:
                 {"role": "system", "content": sp_text or self.bot.str_system_prompt}
             ]
 
+
+    # -----------------------
+    # Persist/restore helpers
+    # -----------------------
     def _persist_state(self):
         """
         Save both the last system prompt filename (if any) and last chat name (if any).
@@ -519,35 +535,60 @@ class ChatbotApp:
         self.cbo_filesChat.focus_set()
 
 
-
     def new_chat(self) -> None:
         """
-        Clear the visible chat window and reset the bot's chat history to a single
-        system message. The system prompt used is whatever is currently in the
-        left-hand editor (self.txt); if empty, we keep the bot's existing prompt.
+        Save the current chat (named -> named file, unnamed -> autosave),
+        then clear name field and start a fresh conversation using the editor's system prompt.
         """
-        # 1) Decide which system prompt to use
+        # --- 0) Persist current session first (silent) --------------------------
+        try:
+            if self.current_chat_name:
+                # Save to the named file
+                self._save_named_chat(self.current_chat_name)
+            else:
+                # No name: write autosave
+                self._write_autosave()
+        except Exception as e:
+            # Non-fatal: continue to start the new chat regardless
+            print(f"[NEW CHAT] Pre-save failed: {e}")
+
+        # --- 1) Clear the chat *name* UI so we don't carry it forward -----------
+        self.current_chat_name = None
+        self.var_filenameChat.set("")   # Entry under SAVE AS (chat)
+        self.var_choiceChat.set("")     # Backing var for chat combobox
+        self.cbo_filesChat.set("")      # Clear visible selection
+        # If you want the list to reflect any new named save that might have been created, refresh:
+        self.refresh_comboboxChat()
+
+        # --- 2) Decide which system prompt to use -------------------------------
         new_system_prompt = self.txt.get("1.0", tk.END).strip()
         if not new_system_prompt:
             new_system_prompt = self.bot.str_system_prompt  # keep existing if editor is empty
 
-        # 2) Reset the bot to a fresh conversation
+        # --- 3) Reset the bot to a fresh conversation ---------------------------
         self.bot.reset(system_prompt=new_system_prompt)
 
-        # 3) Clear the chat display
+        # --- 4) Clear the visible chat transcript -------------------------------
         self.chat_display.configure(state='normal')
         self.chat_display.delete("1.0", tk.END)
         self.chat_display.configure(state='disabled')
 
-        # 4) Clear last sources and any pending input
+        # --- 5) Clear last sources and any pending input ------------------------
         self.last_sources = []
         self.user_input.delete(0, tk.END)
 
-        # 5) (Optional) Provide a small visual cue that a new chat began
+        # --- 6) Provide the usual visual cue -----------------------------------
         self.chat_display.configure(state='normal')
         self.chat_display.insert(tk.END, "— New chat started —\n\n")
         self.chat_display.configure(state='disabled')
         self.chat_display.see(tk.END)
+
+        # Optional: move typing focus to the input box for immediate chatting
+        #self.user_input.focus_set()
+        self.ent_nameChat.focus_set()   # instead of self.user_input.focus_set()
+
+        # --- 7) Persist lightweight state ---------------------------------------
+        self._persist_state()
 
         print("[UI] New chat started. System prompt in use:")
         print(new_system_prompt)
@@ -556,13 +597,40 @@ class ChatbotApp:
     # -----------------------
     # Helpers
     # -----------------------
+    def _keyboardize_button(self, btn: tk.Widget) -> None:
+        """
+        Make a button focusable via Tab/Shift-Tab and activatable via Enter/Space.
+        Works for tk.Button and ttk.Button.
+        """
+        # Ensure it can receive keyboard focus
+        try:
+            btn.configure(takefocus=True)
+        except tk.TclError:
+            pass  # some themed widgets may not expose takefocus; ok to skip
+
+        # Bind keys to invoke() when the button has focus
+        def _invoke(_event=None, _b=btn):
+            try:
+                _b.invoke()
+            except Exception:
+                # If a widget masquerades as a button but lacks .invoke()
+                pass
+            return "break"  # prevent the key event from propagating further
+
+        btn.bind("<Return>", _invoke)     # main Enter
+        btn.bind("<KP_Enter>", _invoke)   # numeric keypad Enter
+        btn.bind("<space>", _invoke)      # Spacebar
+
+
     def list_txt_basenames(self):
         """Return a sorted list of filenames (without .txt) in base_dir."""
         return sorted(p.stem for p in self.base_dir.glob("*.txt"))
 
+
     def refresh_combobox(self):
         names = self.list_txt_basenames()
         self.cbo_files["values"] = names
+
 
     @staticmethod
     def _sanitize_filename(name: str) -> str:
@@ -572,28 +640,15 @@ class ChatbotApp:
         name = re.sub(r"\s+", " ", name)
         return name
 
+
     def _select_combo_item(self, name: str):
         """Select 'name' in the combobox and focus it, if present."""
         values = list(self.cbo_files["values"])
         if name in values:
             self.cbo_files.current(values.index(name))
         self.cbo_files.focus_set()
+  
 
-    def _persist_state(self):
-        """Save last loaded file stem (if any) to the state file."""
-        data = {"last_file": self.current_name}
-        try:
-            self.state_path.write_text(json.dumps(data), encoding="utf-8")
-        except Exception:
-            pass  # non-fatal
-
-    def _load_state(self):
-        """Return last_file stem or None."""
-        try:
-            data = json.loads(self.state_path.read_text(encoding="utf-8"))
-            return data.get("last_file")
-        except Exception:
-            return None
     # -----------------------
     # Events / Commands
     # -----------------------
@@ -878,15 +933,38 @@ class ChatbotApp:
 
 
     def load_selectedChat(self, event: Optional[tk.Event] = None) -> None:
+        """
+        Pre-save the current chat (if named -> named file; else autosave as a safety net),
+        then load the newly selected chat from the combobox.
+        """
+        # --- A) Determine the next chat to load --------------------------------
         name = self.var_choiceChat.get().strip()
         if not name:
             return
-
         path = self.base_dir / f"{name}.chat.json"
         if not path.exists():
             messagebox.showerror("Not found", f"Chat session not found:\n{path}")
             return
 
+        # --- B) PRE-SAVE the current session before switching -------------------
+        try:
+            if self.current_chat_name:
+                # Save the current session under its existing name
+                self._save_named_chat(self.current_chat_name)
+            else:
+                # Safety net (remove this line if you *don’t* want autosave here)
+                self._write_autosave()
+        except Exception as e:
+            # Non-fatal – still proceed to load the requested chat
+            print(f"[Load] Pre-save failed: {e}")
+
+        # If the user re-selected the same chat, we can just reload it; that’s OK.
+        # If you prefer to short-circuit instead:
+        # if self.current_chat_name and name == self.current_chat_name:
+        #     self.user_input.focus_set()
+        #     return
+
+        # --- C) Load the requested chat -----------------------------------------
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except Exception as e:
@@ -895,24 +973,55 @@ class ChatbotApp:
 
         self._apply_chat_payload(data)
 
-        # Mark current chat name and mirror in UI
+        # --- D) Mirror in UI and state ------------------------------------------
         self.current_chat_name = name
         self.var_filenameChat.set(name)
         self.var_choiceChat.set(name)
         self._select_combo_itemChat(name)
+        self.refresh_comboboxChat()  # in case files changed due to pre-save
 
+        # Persist the "last_chat" pointer so we restore this on next launch
         self._persist_state()
+
+        # --- E) UX nicety: typing focus into the input field --------------------
+        self.user_input.focus_set()
+
         messagebox.showinfo("Loaded", f"Chat session loaded:\n{path}")
 
 
+    def _save_named_chat(self, name: str) -> Path:
+        """
+        Silently save the current session to <base_dir>/<name>.chat.json.
+        No prompts or message boxes; used by on_close autosave-to-named.
+        """
+        payload = self._serialize_current_chat()
+        target = (self.base_dir / f"{name}.chat.json")
+        # Overwrite without asking – this is an autosave-on-exit of a named chat
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return target
+
+
+    def _write_autosave(self) -> Path:
+        """
+        Write the current session to _autosave.chat.json silently.
+        """
+        payload = self._serialize_current_chat()
+        autosave_path = self.base_dir / CHAT_AUTOSAVE_FILE
+        autosave_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return autosave_path
+
+
     def restore_state_or_focus_editor(self):
-        """On startup, try to restore last file; else just show empty editor.
-        Always give focus to the text area for immediate typing."""
-        last = self._load_state()
+        """
+        On startup, try to restore last *system prompt* file; else show empty editor.
+        Always give focus to the text area for immediate typing.
+        """
+        state = self._load_state()
         self.refresh_combobox()
-        if last and (self.base_dir / f"{last}.txt").exists():
+        last_file = state.get("last_file")
+        if last_file and (self.base_dir / f"{last_file}.txt").exists():
             # Select it in combo and load its content
-            self.var_choice.set(last)
+            self.var_choice.set(last_file)
             self.load_selected()
         # Always focus the text area on startup
         self.txt.focus_set()
@@ -922,7 +1031,6 @@ class ChatbotApp:
         """
         After models/bot/UI are ready, try to restore the last chat if present; else autosave.
         """
-        # Refresh chat list in case files changed
         self.refresh_comboboxChat()
 
         state = self._load_state()
@@ -939,6 +1047,7 @@ class ChatbotApp:
                     self.var_filenameChat.set(last_chat)
                     self.var_choiceChat.set(last_chat)
                     self._select_combo_itemChat(last_chat)
+                    self.user_input.focus_set()  # NEW: focus input
                     return
                 except Exception as e:
                     print(f"[Restore] Failed to load last_chat: {e}")
@@ -954,29 +1063,52 @@ class ChatbotApp:
                 self.var_choiceChat.set("")
                 self.cbo_filesChat.set("")
                 print("[Restore] Restored from autosave.")
+                self.user_input.focus_set()  # NEW: focus input
                 return
             except Exception as e:
                 print(f"[Restore] Failed to load autosave: {e}")
 
-        # 3) Nothing to restore: leave UI as-is
         print("[Restore] No last chat or autosave found.")
+        # If nothing to restore, still put cursor where you want it:
+        self.user_input.focus_set()  # NEW: focus input when starting fresh
 
 
     def on_close(self):
-        # 1) Autosave current chat to _autosave.chat.json
+        """
+        If the current chat has a name, persist it to <name>.chat.json on exit.
+        Otherwise, fall back to _autosave.chat.json.
+        Also persist 'last_file' and 'last_chat' state, then exit.
+        """
         try:
-            payload = self._serialize_current_chat()
-            autosave_path = self.base_dir / CHAT_AUTOSAVE_FILE
-            autosave_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception as e:
-            # Non-fatal; continue shutdown
-            print(f"[Autosave] Failed: {e}")
-
-        # 2) Persist state (last_file + last_chat)
-        self._persist_state()
-
-        # 3) Exit
-        self.master.destroy()
+            if self.current_chat_name:
+                # Named chat: save to its file
+                try:
+                    self._save_named_chat(self.current_chat_name)
+                except Exception as e:
+                    print(f"[Exit Save] Failed to save named chat '{self.current_chat_name}': {e}")
+                    # As a safety net, also write an autosave so nothing is lost
+                    try:
+                        autosave_path = self.base_dir / CHAT_AUTOSAVE_FILE
+                        autosave_path.write_text(
+                            json.dumps(self._serialize_current_chat(), ensure_ascii=False, indent=2),
+                            encoding="utf-8"
+                        )
+                    except Exception as e2:
+                        print(f"[Autosave Fallback] Failed: {e2}")
+            else:
+                # Unnamed chat: autosave
+                try:
+                    autosave_path = self.base_dir / CHAT_AUTOSAVE_FILE
+                    autosave_path.write_text(
+                        json.dumps(self._serialize_current_chat(), ensure_ascii=False, indent=2),
+                        encoding="utf-8"
+                    )
+                except Exception as e:
+                    print(f"[Autosave] Failed: {e}")
+        finally:
+            # Persist lightweight state no matter what
+            self._persist_state()
+            self.master.destroy()
 
 
     def select_model(self):

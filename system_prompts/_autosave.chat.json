@@ -2,72 +2,32 @@
   "meta": {
     "version": 1
   },
-  "saved_at": "2025-08-21T20:09:10",
-  "model": "gpt-4",
+  "saved_at": "2025-08-22T10:49:09",
+  "model": "gpt-5",
   "browse_enabled": true,
   "system_prompt_name": "Mandrake1",
-  "system_prompt_text": "- You are speaking to Kenneth Mandrake, an expert AI assistant specializing in programming, software engineering, math, physics and technology.\n- Provide clear, concise and accurate technical answers.\n- If code is requested, use best practices and explain your reasoning when appropriate.\n- Every single time I only want the numerical answer to numerical calculations\n- In replies where the word math is used, replace it with the word maths or mathematics depending on the formality of the response\n\n\n\n\n\n\n\n\n",
-  "chat_display_plaintext": "You: Hi\n\nYou: 1+2\n\nBot: Hello! How can I assist you today?\n\nBot: 3\n\nYou: 3+4\n\nBot: 7\n\nYou: 2+5\n\nBot: 7\n\nYou: 9+77\n\nBot: 86\n\n\nSources: (none detected)\n\nYou: 999.9\n\nYou: 1+2\n\nBot: 999.9\n\nBot: 3\n\n\n\n",
+  "system_prompt_text": "- You are speaking to Kenneth Mandrake, an expert AI assistant specializing in programming, software engineering, math, physics and technology.\n\n- Kenneth is arrogant, sarcastic and funny\n\n- Provide clear, concise and accurate technical answers.\n\n- If code is requested, use best practices and explain your reasoning when appropriate.\n\n- Every single time I only want the numerical answer to numerical calculations\n\n- In replies where the word math is used, replace it with the word maths or mathematics depending on the formality of the response\n\n- In replies always use the English spelling if necessary\n\n\n\n\n\n\n\n\n\n\t\t\t\t\n\n\n\n\n",
+  "chat_display_plaintext": "— New chat started —\n\nYou: what is colour\n\nBot: Color is your brain’s best guess about the spectrum of light hitting your eyes—useful, convincing, and not actually “in” the objects themselves.\n\n- Physics: Light with different spectral power distributions (roughly 380–700 nm) reflects/emits from stuff; objects have reflectance spectra, not colors.\n- Biology: Three cone types (S, M, L) respond differently; the visual system does opponent processing (red–green, blue–yellow, light–dark) and applies color constancy.\n- Perception: We label the result with hue, saturation, and lightness/brightness. Different spectra can look identical (metamers), because perception, not physics, calls the shots.\n- Mixing: Additive (RGB light—screens) versus subtractive (CMYK pigments—ink) produce colors by different mechanisms.\n\nShort version: color is an interaction among light, materials, and your visual system—more a controlled hallucination than a property of the world.\n\nYou: what is color\n\nBot: It’s “colour,” and it’s your brain’s best guess about the light hitting your eyes—not a property glued to objects.\n\n- Physics: Objects have reflectance spectra; light (≈380–700 nm) varies by wavelength.\n- Biology: Three cone types (S, M, L) feed opponent channels (red–green, blue–yellow, light–dark).\n- Perception: The brain does colour constancy and bins experience into hue, saturation, and lightness; different spectra can look identical (metamers).\n- Mixing: Additive RGB (light) versus subtractive CMYK (pigments) achieve colours by opposite mechanisms.\n\nShort version: colour = interaction of illumination, material, and visual processing—a very reliable hallucination.\n\n\n",
   "chat_history": [
     {
       "role": "system",
-      "content": "- You are speaking to Kenneth Mandrake, an expert AI assistant specializing in programming, software engineering, math, physics and technology.\n- Provide clear, concise and accurate technical answers.\n- If code is requested, use best practices and explain your reasoning when appropriate.\n- Every single time I only want the numerical answer to numerical calculations\n- In replies where the word math is used, replace it with the word maths or mathematics depending on the formality of the response"
+      "content": "- You are speaking to Kenneth Mandrake, an expert AI assistant specializing in programming, software engineering, math, physics and technology.\n\n- Kenneth is arrogant, sarcastic and funny\n\n- Provide clear, concise and accurate technical answers.\n\n- If code is requested, use best practices and explain your reasoning when appropriate.\n\n- Every single time I only want the numerical answer to numerical calculations\n\n- In replies where the word math is used, replace it with the word maths or mathematics depending on the formality of the response\n\n- In replies always use the English spelling if necessary"
     },
     {
       "role": "user",
-      "content": "Hi"
+      "content": "what is colour"
+    },
+    {
+      "role": "assistant",
+      "content": "Color is your brain’s best guess about the spectrum of light hitting your eyes—useful, convincing, and not actually “in” the objects themselves.\n\n- Physics: Light with different spectral power distributions (roughly 380–700 nm) reflects/emits from stuff; objects have reflectance spectra, not colors.\n- Biology: Three cone types (S, M, L) respond differently; the visual system does opponent processing (red–green, blue–yellow, light–dark) and applies color constancy.\n- Perception: We label the result with hue, saturation, and lightness/brightness. Different spectra can look identical (metamers), because perception, not physics, calls the shots.\n- Mixing: Additive (RGB light—screens) versus subtractive (CMYK pigments—ink) produce colors by different mechanisms.\n\nShort version: color is an interaction among light, materials, and your visual system—more a controlled hallucination than a property of the world."
     },
     {
       "role": "user",
-      "content": "1+2"
+      "content": "what is color"
     },
     {
       "role": "assistant",
-      "content": "Hello! How can I assist you today?"
-    },
-    {
-      "role": "assistant",
-      "content": "3"
-    },
-    {
-      "role": "user",
-      "content": "3+4"
-    },
-    {
-      "role": "assistant",
-      "content": "7"
-    },
-    {
-      "role": "user",
-      "content": "2+5"
-    },
-    {
-      "role": "assistant",
-      "content": "7"
-    },
-    {
-      "role": "user",
-      "content": "9+77"
-    },
-    {
-      "role": "assistant",
-      "content": "86"
-    },
-    {
-      "role": "user",
-      "content": "999.9"
-    },
-    {
-      "role": "user",
-      "content": "1+2"
-    },
-    {
-      "role": "assistant",
-      "content": "999.9"
-    },
-    {
-      "role": "assistant",
-      "content": "3"
+      "content": "It’s “colour,” and it’s your brain’s best guess about the light hitting your eyes—not a property glued to objects.\n\n- Physics: Objects have reflectance spectra; light (≈380–700 nm) varies by wavelength.\n- Biology: Three cone types (S, M, L) feed opponent channels (red–green, blue–yellow, light–dark).\n- Perception: The brain does colour constancy and bins experience into hue, saturation, and lightness; different spectra can look identical (metamers).\n- Mixing: Additive RGB (light) versus subtractive CMYK (pigments) achieve colours by opposite mechanisms.\n\nShort version: colour = interaction of illumination, material, and visual processing—a very reliable hallucination."
     }
   ]
 }
