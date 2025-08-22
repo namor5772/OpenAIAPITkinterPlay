@@ -32,9 +32,9 @@ MODEL_CMB_WIDTH = 180
 MODEL_CMB_HEIGHT = 25
 
 CHAT_DISPLAY_X = 10
-CHAT_DISPLAY_Y = 45+35
+CHAT_DISPLAY_Y = 45+5
 CHAT_DISPLAY_WIDTH = WINDOW_WIDTH - 20
-CHAT_DISPLAY_HEIGHT = WINDOW_HEIGHT - 90-35  # slightly shorter to make room for the Sources button row
+CHAT_DISPLAY_HEIGHT = WINDOW_HEIGHT - 90-5  # slightly shorter to make room for the Sources button row
 
 INPUT_X = 10
 INPUT_Y = WINDOW_HEIGHT - 35
@@ -280,20 +280,20 @@ class ChatbotApp:
         self.current_chat_name: str | None = None
 
         # --- Widgets ---------------------------------------------------------
-        self.lbl_save = tk.Label(master, text="Save as :")
-        self.lbl_save.place(x=PADX, y=PADY+3) # small +3 vertical nudge to align with the Entry control
+        self.lbl_save = tk.Label(master, text="Save System Prompt as :")
+        self.lbl_save.place(x=PADX, y=PADY+2) # small +3 vertical nudge to align with the Entry control
         self.var_filename = tk.StringVar()
         self.ent_name = tk.Entry(master, textvariable=self.var_filename)
-        self.ent_name.place(x=PADX+80, y=PADY, width=100, height=26)
+        self.ent_name.place(x=PADX+136, y=PADY, width=100, height=26)
         self.ent_name.bind("<Return>", lambda e: self.save_as_clicked())
         self.ent_name.bind("<FocusOut>", lambda e: self.var_filename.get().strip() and self.save_as_clicked())
 
         self.lbl_load = tk.Label(master, text="Load :")
-        self.lbl_load.place(x=PADX+200, y=PADY+2)
+        self.lbl_load.place(x=PADX+250, y=PADY+2)
 
         self.var_choice = tk.StringVar()
         self.cbo_files = ttk.Combobox(master, textvariable=self.var_choice, state="readonly")
-        self.cbo_files.place(x=PADX+240, y=PADY, width=100, height=26)
+        self.cbo_files.place(x=PADX+290, y=PADY, width=100, height=26)
         self.cbo_files.bind("<Return>", self.load_selected)              # Enter loads
         self.cbo_files.bind("<<ComboboxSelected>>", self.load_selected)  # optional immediate load
 
@@ -340,26 +340,26 @@ class ChatbotApp:
         self.btn_newChat = tk.Button(master, text="NEW CHAT", command=self.new_chat)
         self.btn_newChat.place(x=WINDOW_WIDTH-97, y=PADY, width=70, height=26)
 
-        self.lbl_saveChat = tk.Label(master, text="Save as :")
-        self.lbl_saveChat.place(x=10, y=PADY+2+35)
+        self.lbl_saveChat = tk.Label(master, text="Save Chat as :")
+        self.lbl_saveChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+15, y=PADY+1)
         self.var_filenameChat = tk.StringVar()
         self.ent_nameChat = tk.Entry(master, textvariable=self.var_filenameChat)
-        self.ent_nameChat.place(x=10+53, y=PADY+35, width=100, height=26)
+        self.ent_nameChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+95, y=PADY, width=100, height=26)
         self.ent_nameChat.bind("<Return>", lambda e: self.saveChat_as_clicked())
         self.ent_nameChat.bind("<FocusOut>", lambda e: self.var_filenameChat.get().strip() and self.saveChat_as_clicked())
 
         self.lbl_loadChat = tk.Label(master, text="Load :")
-        self.lbl_loadChat.place(x=10+200, y=PADY+2+35)
+        self.lbl_loadChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+210, y=PADY+1)
 
         self.var_choiceChat = tk.StringVar()
         self.cbo_filesChat = ttk.Combobox(master, textvariable=self.var_choiceChat, state="readonly")
-        self.cbo_filesChat.place(x=10+240, y=PADY+35, width=100, height=26)
+        self.cbo_filesChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+250, y=PADY, width=100, height=26)
         self.cbo_filesChat.bind("<Return>", self.load_selectedChat)              # Enter loads
         self.cbo_filesChat.bind("<<ComboboxSelected>>", self.load_selectedChat)  # optional immediate load
         self.refresh_comboboxChat()
 
         self.btn_deleteChat = tk.Button(master, text="DELETE", command=self.delete_fileChat)
-        self.btn_deleteChat.place(x=WINDOW_WIDTH-97, y=PADY+35, width=70, height=26)
+        self.btn_deleteChat.place(x=WINDOW_WIDTH-177, y=PADY, width=70, height=26)
 
         self.chat_display = ScrolledText(master, wrap=tk.WORD, state='disabled', bg="white")
         self.chat_display.place(x=CHAT_DISPLAY_X, y=CHAT_DISPLAY_Y, width=CHAT_DISPLAY_WIDTH, height=CHAT_DISPLAY_HEIGHT)
