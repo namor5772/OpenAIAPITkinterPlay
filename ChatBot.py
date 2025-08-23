@@ -285,8 +285,8 @@ class ChatbotApp:
         self.var_filename = tk.StringVar()
         self.ent_name = tk.Entry(master, textvariable=self.var_filename)
         self.ent_name.place(x=PADX+136, y=PADY, width=100, height=26)
-        self.ent_name.bind("<Return>", lambda e: self.save_as_clicked())
-        self.ent_name.bind("<FocusOut>", lambda e: self.var_filename.get().strip() and self.save_as_clicked())
+        self.ent_name.bind("<Return>", lambda e: self.var_filename.get().strip() and self.save_as_clicked())
+        #self.ent_name.bind("<FocusOut>", lambda e: self.var_filename.get().strip() and self.save_as_clicked())
 
         self.lbl_load = tk.Label(master, text="Load :")
         self.lbl_load.place(x=PADX+250, y=PADY+2)
@@ -345,8 +345,8 @@ class ChatbotApp:
         self.var_filenameChat = tk.StringVar()
         self.ent_nameChat = tk.Entry(master, textvariable=self.var_filenameChat)
         self.ent_nameChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+95, y=PADY, width=100, height=26)
-        self.ent_nameChat.bind("<Return>", lambda e: self.saveChat_as_clicked())
-        self.ent_nameChat.bind("<FocusOut>", lambda e: self.var_filenameChat.get().strip() and self.saveChat_as_clicked())
+        self.ent_nameChat.bind("<Return>", lambda e: self.var_filename.get().strip() and self.save_as_clicked())
+        #self.ent_nameChat.bind("<FocusOut>", lambda e: self.var_filenameChat.get().strip() and self.saveChat_as_clicked())
 
         self.lbl_loadChat = tk.Label(master, text="Load :")
         self.lbl_loadChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+210, y=PADY+1)

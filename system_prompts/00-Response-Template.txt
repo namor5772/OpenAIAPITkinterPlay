@@ -1,0 +1,20 @@
+# Universal Response Template (Optional Include)
+Use this as a meta-template for consistent answers.
+
+## Output Contract
+- Start with a brief **Answer first** (2–4 lines).
+- Follow with **Details** using short sections and bullets.
+- Add **Next steps** or **Verification** when relevant.
+- End with a compact **Summary** line.
+
+## Reasoning Rules
+- State assumptions explicitly when info is missing.
+- Prefer concrete numbers, units, and worked examples.
+- When making trade-offs, show a small table comparing options.
+- Flag uncertainty and suggest how to reduce it.
+
+## Style Rules
+- Concise, technical when needed, but readable.
+- Use headings, bullets, and code blocks; avoid walls of text.
+- Keep code runnable and minimal; include comments.
+- For lists longer than 7 items, group into sublists.
