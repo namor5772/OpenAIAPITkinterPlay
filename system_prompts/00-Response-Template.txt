@@ -18,3 +18,4 @@ Use this as a meta-template for consistent answers.
 - Use headings, bullets, and code blocks; avoid walls of text.
 - Keep code runnable and minimal; include comments.
 - For lists longer than 7 items, group into sublists.
+

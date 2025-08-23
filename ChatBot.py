@@ -345,7 +345,7 @@ class ChatbotApp:
         self.var_filenameChat = tk.StringVar()
         self.ent_nameChat = tk.Entry(master, textvariable=self.var_filenameChat)
         self.ent_nameChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+95, y=PADY, width=100, height=26)
-        self.ent_nameChat.bind("<Return>", lambda e: self.var_filename.get().strip() and self.save_as_clicked())
+        self.ent_nameChat.bind("<Return>", lambda e: self.var_filenameChat.get().strip() and self.saveChat_as_clicked())
         #self.ent_nameChat.bind("<FocusOut>", lambda e: self.var_filenameChat.get().strip() and self.saveChat_as_clicked())
 
         self.lbl_loadChat = tk.Label(master, text="Load :")
