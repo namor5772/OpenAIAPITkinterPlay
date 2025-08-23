@@ -279,21 +279,23 @@ class ChatbotApp:
         self.current_name: str | None = None
         self.current_chat_name: str | None = None
 
-        # --- Widgets ---------------------------------------------------------
+
+        # --- System Prompt UI elements ----------------------------------------
+
         self.lbl_save = tk.Label(master, text="Save System Prompt as :")
         self.lbl_save.place(x=PADX, y=PADY+2) # small +3 vertical nudge to align with the Entry control
         self.var_filename = tk.StringVar()
         self.ent_name = tk.Entry(master, textvariable=self.var_filename)
-        self.ent_name.place(x=PADX+136, y=PADY, width=100, height=26)
+        self.ent_name.place(x=PADX+136, y=PADY, width=255, height=26)
         self.ent_name.bind("<Return>", lambda e: self.var_filename.get().strip() and self.save_as_clicked())
         #self.ent_name.bind("<FocusOut>", lambda e: self.var_filename.get().strip() and self.save_as_clicked())
 
-        self.lbl_load = tk.Label(master, text="Load :")
-        self.lbl_load.place(x=PADX+250, y=PADY+2)
+        self.lbl_load = tk.Label(master, text="Load System Prompt     :")
+        self.lbl_load.place(x=PADX, y=PADY+2+35)
 
         self.var_choice = tk.StringVar()
         self.cbo_files = ttk.Combobox(master, textvariable=self.var_choice, state="readonly")
-        self.cbo_files.place(x=PADX+290, y=PADY, width=100, height=26)
+        self.cbo_files.place(x=PADX+136, y=PADY+35, width=255, height=26)
         self.cbo_files.bind("<Return>", self.load_selected)              # Enter loads
         self.cbo_files.bind("<<ComboboxSelected>>", self.load_selected)  # optional immediate load
 
@@ -304,7 +306,10 @@ class ChatbotApp:
         self.btn_clear.place(x=WINDOW_WIDTH_actual-97, y=PADY, width=70, height=26)
 
         self.txt = ScrolledText(master, wrap=tk.WORD, undo=True, bg="lightgrey")
-        self.txt.place(x=PADX, y=CHAT_DISPLAY_Y, width=WINDOW_W - 20, height=CHAT_DISPLAY_HEIGHT+34)
+        self.txt.place(x=PADX, y=CHAT_DISPLAY_Y+35, width=WINDOW_W - 20, height=CHAT_DISPLAY_HEIGHT+34-35)
+
+        # --- System Prompt UI elements -- END ---------------------------------
+
 
         # Keyboard convenience  
         self.master.bind_all("<Control-s>", self._accelerator_save)
@@ -329,6 +334,9 @@ class ChatbotApp:
         self.labels = MODEL_OPTIONS
         self.initial_label = MODEL_OPTIONS[0]
 
+
+        # --- Chat session UI elements ----------------------------------------
+
         self.lbl_model = tk.Label(master, text="Model :")
         self.lbl_model.place(x=10, y=PADY+1)
      
@@ -337,29 +345,29 @@ class ChatbotApp:
         self.model_cmb.place(x=MODEL_CMB_X, y=MODEL_CMB_Y, width=MODEL_CMB_WIDTH, height=MODEL_CMB_HEIGHT)
         self.model_cmb.bind("<<ComboboxSelected>>", lambda event: self.select_model())
 
-        self.btn_newChat = tk.Button(master, text="NEW CHAT", command=self.new_chat)
-        self.btn_newChat.place(x=WINDOW_WIDTH-97, y=PADY, width=70, height=26)
-
         self.lbl_saveChat = tk.Label(master, text="Save Chat as :")
-        self.lbl_saveChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+15, y=PADY+1)
+        self.lbl_saveChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+10, y=PADY+1)
         self.var_filenameChat = tk.StringVar()
         self.ent_nameChat = tk.Entry(master, textvariable=self.var_filenameChat)
-        self.ent_nameChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+95, y=PADY, width=100, height=26)
+        self.ent_nameChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+90, y=PADY, width=200, height=26)
         self.ent_nameChat.bind("<Return>", lambda e: self.var_filenameChat.get().strip() and self.saveChat_as_clicked())
         #self.ent_nameChat.bind("<FocusOut>", lambda e: self.var_filenameChat.get().strip() and self.saveChat_as_clicked())
 
-        self.lbl_loadChat = tk.Label(master, text="Load :")
-        self.lbl_loadChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+210, y=PADY+1)
+        self.lbl_loadChat = tk.Label(master, text="Load Chat :")
+        self.lbl_loadChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+213+85, y=PADY+1)
 
         self.var_choiceChat = tk.StringVar()
         self.cbo_filesChat = ttk.Combobox(master, textvariable=self.var_choiceChat, state="readonly")
-        self.cbo_filesChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+250, y=PADY, width=100, height=26)
+        self.cbo_filesChat.place(x=MODEL_CMB_X+MODEL_CMB_WIDTH+365, y=PADY, width=200, height=26)
         self.cbo_filesChat.bind("<Return>", self.load_selectedChat)              # Enter loads
         self.cbo_filesChat.bind("<<ComboboxSelected>>", self.load_selectedChat)  # optional immediate load
         self.refresh_comboboxChat()
 
         self.btn_deleteChat = tk.Button(master, text="DELETE", command=self.delete_fileChat)
         self.btn_deleteChat.place(x=WINDOW_WIDTH-177, y=PADY, width=70, height=26)
+
+        self.btn_newChat = tk.Button(master, text="NEW CHAT", command=self.new_chat)
+        self.btn_newChat.place(x=WINDOW_WIDTH-97, y=PADY, width=70, height=26)
 
         self.chat_display = ScrolledText(master, wrap=tk.WORD, state='disabled', bg="white")
         self.chat_display.place(x=CHAT_DISPLAY_X, y=CHAT_DISPLAY_Y, width=CHAT_DISPLAY_WIDTH, height=CHAT_DISPLAY_HEIGHT)
@@ -370,6 +378,9 @@ class ChatbotApp:
 
         self.src_button = tk.Button(master, text=SRC_BTN_LABEL, command=self.show_sources)
         self.src_button.place(x=SOURCES_BUTTON_X, y=SOURCES_BUTTON_Y, width=SOURCES_BUTTON_WIDTH, height=SOURCES_BUTTON_HEIGHT)
+
+        # --- Chat session UI elements -- END ---------------------------------
+
 
         # Make all buttons keyboard-accessible
         for b in (

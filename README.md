@@ -51,7 +51,7 @@ A minimalist, keyboard-friendly desktop chat client built with **Tkinter** that 
 
 ## Demo
 
-_Add a screenshot or short GIF here (optional):_
+screenshot of the only window of this app:
 
 ![ChatBot screenshot](docs/screenshot.png)
 
