@@ -15,6 +15,14 @@ A minimalist, keyboard-friendly desktop chat client built with **Tkinter** that 
 
 ---
 
+> **Docs:** 
+> [Quickstart](docs/QUICKSTART.md) • 
+> [Troubleshooting](docs/TROUBLESHOOTING.md) • 
+> [Architecture](docs/ARCHITECTURE.md) • 
+> [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md) • 
+> [Prompt Presets](docs/PROMPTS.md)
+
+
 ## Table of Contents
 
 - [Demo](#demo)
