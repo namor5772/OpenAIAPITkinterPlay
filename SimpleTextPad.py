@@ -8,8 +8,8 @@ import re
 # -----------------------
 # Layout constants (px)
 # -----------------------
-WINDOW_W = 800
-WINDOW_H = 800
+WINDOW_W = 870
+WINDOW_H = 900
 
 PADX = 10
 PADY = 10
@@ -19,13 +19,13 @@ TEXT_Y = 70
 TEXT_W = WINDOW_W - 20
 TEXT_H = WINDOW_H - 80
 
-STATE_FILE = ".textpad_state.json"   # stored next to this .py file
+STATE_FILE = ".textpadsimple_state.json"   # stored next to this .py file
 
 class BasicTextPad(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Basic TextPad")
-        self.geometry(f"{WINDOW_W}x{WINDOW_H}")
+        self.title("Basic TextPad - https://github.com/namor5772/OpenAIAPITkinterPlay/blob/main/SimpleTextPad.py")
+        self.geometry(f"{WINDOW_W}x{WINDOW_H}+0+0")
 
         # FIX: Create target dir where the program is RUN FROM (current working dir)
         # If you instead want the script's folder: Path(__file__).resolve().parent
@@ -44,20 +44,20 @@ class BasicTextPad(tk.Tk):
 
         self.var_filename = tk.StringVar()
         self.ent_name = tk.Entry(self, textvariable=self.var_filename)
-        self.ent_name.place(x=160, y=PADY, width=260, height=26)
+        self.ent_name.place(x=115, y=PADY, width=260, height=26)
 
         self.btn_save = tk.Button(self, text="SAVE AS", command=self.save_as_clicked)
-        self.btn_save.place(x=430, y=PADY, width=90, height=26)
+        self.btn_save.place(x=385, y=PADY, width=70, height=26)
 
         self.btn_clear = tk.Button(self, text="CLEAR", command=self.clear_all_reset)
-        self.btn_clear.place(x=525, y=PADY, width=80, height=26)
+        self.btn_clear.place(x=465, y=PADY, width=70, height=26)
 
         self.lbl_load = tk.Label(self, text="Load file:")
-        self.lbl_load.place(x=615, y=PADY)
+        self.lbl_load.place(x=540, y=PADY)
 
         self.var_choice = tk.StringVar()
         self.cbo_files = ttk.Combobox(self, textvariable=self.var_choice, state="readonly")
-        self.cbo_files.place(x=680, y=PADY, width=160, height=26)
+        self.cbo_files.place(x=595, y=PADY, width=260, height=26)
         self.cbo_files.bind("<Return>", self.load_selected)              # Enter loads
         self.cbo_files.bind("<<ComboboxSelected>>", self.load_selected)  # optional immediate load
 

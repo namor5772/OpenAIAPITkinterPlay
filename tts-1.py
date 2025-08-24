@@ -9,7 +9,7 @@ speech_file = Path("output.mp3")
 with client.audio.speech.with_streaming_response.create(
     model="tts-1",
     voice="alloy",  # available: alloy, verse, shimmer, etc.
-    input="Hello Lee-Ann, are you cleaning the dishes again. I should help"
+    input="Why don’t kittens play poker in the jungle? Because there are too many cheetahs! Ha Ha - Ha de Ha"
 ) as response:
     response.stream_to_file(speech_file)
 
