@@ -4,6 +4,7 @@ from tkinter.scrolledtext import ScrolledText
 from pathlib import Path
 import json
 import re
+import os
 from openai import OpenAI
 import tiktoken
 from typing import List, Dict, Any, Optional, Tuple, Set
@@ -267,13 +268,13 @@ class ChatbotApp:
         self.master = master
         self.master.title("OpenAI Responses-API Chatbot - https://github.com/namor5772/OpenAIAPITkinterPlay/blob/main/ChatBot.py")
 
-        # FIX: Create target dir where the program is RUN FROM (current working dir)
-        # If you instead want the script's folder: Path(__file__).resolve().parent
-        self.base_dir = (Path.cwd() / "system_prompts").resolve()
+        # Setting up directories and special file paths
+        script_dir = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
+        self.base_dir = Path(script_dir) / "system_prompts"  
         self.base_dir.mkdir(parents=True, exist_ok=True)
-
-        # State file stored next to the script (not inside system_prompts)
-        self.state_path = Path(__file__).resolve().parent / STATE_FILE
+        self.state_path = Path(script_dir) / STATE_FILE
+        print(f'The system prompts are in {self.base_dir}')
+        print(f'The STATE FILE path is {self.state_path}')
 
         # Tracks which base filename (stem) is currently loaded in the editor
         self.current_name: str | None = None
