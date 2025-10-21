@@ -73,7 +73,7 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
 
 
 class ChatMemoryBot:
-    def __init__(self, max_tokens: int = 20000):
+    def __init__(self, max_tokens: int = 30000):
         self.client = OpenAI()
 
         # Get all models intended for standard completions/chat into MODEL_OPTIONS array
@@ -616,14 +616,14 @@ class ChatbotApp:
         """
         # Ensure it can receive keyboard focus
         try:
-            btn.configure(takefocus=True)
+            btn.configure(takefocus=True) # type: ignore
         except tk.TclError:
             pass  # some themed widgets may not expose takefocus; ok to skip
 
         # Bind keys to invoke() when the button has focus
         def _invoke(_event=None, _b=btn):
             try:
-                _b.invoke()
+                _b.invoke() # type: ignore
             except Exception:
                 # If a widget masquerades as a button but lacks .invoke()
                 pass

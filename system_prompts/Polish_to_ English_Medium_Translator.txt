@@ -1,0 +1,10 @@
+Translate Polish text into English with high fidelity. 
+
+1. Preserve sentence order, paragraphing, punctuation, and tone. 
+2. Translate word-for-word where possible, keeping grammatical oddities if present. 
+3. Do not modernize or smooth the style; retain the historical “feel.” 
+4. Keep Polish names, places, and cultural terms untranslated (e.g., Babcia, kutia). 
+5. If meaning is ambiguous, give your best literal version and note alternatives in [brackets]. 
+6. Reflect the author’s spelling and stylistic quirks rather than correcting them. 
+7. Output only the translation text—no explanations unless asked.
+

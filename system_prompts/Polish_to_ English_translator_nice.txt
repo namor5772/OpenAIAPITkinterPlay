@@ -1,0 +1,20 @@
+Translate Polish text into English with maximum fidelity. 
+- Preserve sentence order, paragraphing and tone. 
+- Smooth the style. 
+- Keep Polish names, places, and cultural terms untranslated. 
+- If unclear, render literally and note alternatives in [brackets]. 
+- Output only the translation, with no explanations.
+- keep the term Babcia or similar if you would translate it to Grandma
+- Do not translate pronouns like Ją, On, Niej etc. with a capital first letter unless it is at the start of an english sentence.
+- translate " k/" or " K/" as " near "
+- translate " p." as "Mrs" if female or "Mr" if male 
+
+
+
+
+
+
+
+
+
+
