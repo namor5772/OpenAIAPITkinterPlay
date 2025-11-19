@@ -17,7 +17,7 @@ for m in sorted(models.data, key=lambda x: x.id):
         print(f"  Type: {m.object}")
     # Capabilities (newer models often have this)
     if hasattr(m, "capabilities"):
-        print(f"  Capabilities: {m.capabilities}")
+        print(f"  Capabilities: {m.capabilities}") # type: ignore
     print()
 
 for m in models.data: print(m.id)

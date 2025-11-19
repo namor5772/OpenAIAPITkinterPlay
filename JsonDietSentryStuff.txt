@@ -1,0 +1,80 @@
+directory for foods.db app that I am actually using
+
+C:\Users\grobl\AppData\Local\Apps\2.0\A0WOLGB4.9YV\J81N8L7C.32C\diet..tion_0000000000000000_0002.0000_53548df2350299b6
+C:\Users\grobl\AppData\Local\Apps\2.0\A0WOLGB4.9YV\J81N8L7C.32C\diet..tion_0000000000000000_0002.0000_53548df2350299b6\foods.db
+
+{
+  "FoodDescription": "Example food description per 100 g/mL",
+  "Energy": 0.0,
+  "Protein": 0.0,
+  "FatTotal": 0.0,
+  "SaturatedFat": 0.0,
+  "TransFat": 0.0,
+  "PolyunsaturatedFat": 0.0,
+  "MonounsaturatedFat": 0.0,
+  "Carbohydrate": 0.0,
+  "Sugars": 0.0,
+  "DietaryFibre": 0.0,
+  "SodiumNa": 0.0,
+  "CalciumCa": 0.0,
+  "PotassiumK": 0.0,
+  "ThiaminB1": 0.0,
+  "RiboflavinB2": 0.0,
+  "NiacinB3": 0.0,
+  "Folate": 0.0,
+  "IronFe": 0.0,
+  "MagnesiumMg": 0.0,
+  "VitaminC": 0.0,
+  "Caffeine": 0.0,
+  "Cholesterol": 0.0,
+  "Alcohol": 0.0
+}
+
+
+
+
+PROMPT:
+
+On my Windows 11 Laptop I have an SQLite database file:
+C:\Users\grobl\AppData\Local\Apps\2.0\A0WOLGB4.9YV\J81N8L7C.32C\diet..tion_0000000000000000_0002.0000_53548df2350299b6\foods.db
+
+I have a JSON file:
+C:\Users\grobl\OneDrive\GitRepos\OpenAIAPITkinterPlay\food.json
+
+I would like you to create a standalone Python script called InsetNIP.py (in the same directory as the food.json file).
+It should use the food.json file to insert a row into the Foods table of the above foods.db database
+
+The layout of the Foods table is specified by:
+
+CREATE TABLE "Foods" (
+	"FoodId"	INTEGER NOT NULL,
+	"FoodDescription"	TEXT NOT NULL,
+	"Energy"	REAL NOT NULL,
+	"Protein"	REAL NOT NULL,
+	"FatTotal"	REAL NOT NULL,
+	"SaturatedFat"	REAL NOT NULL,
+	"TransFat"	REAL NOT NULL,
+	"PolyunsaturatedFat"	REAL NOT NULL,
+	"MonounsaturatedFat"	REAL NOT NULL,
+	"Carbohydrate"	REAL NOT NULL,
+	"Sugars"	REAL NOT NULL,
+	"DietaryFibre"	REAL NOT NULL,
+	"SodiumNa"	REAL NOT NULL,
+	"CalciumCa"	REAL NOT NULL,
+	"PotassiumK"	REAL NOT NULL,
+	"ThiaminB1"	REAL NOT NULL,
+	"RiboflavinB2"	REAL NOT NULL,
+	"NiacinB3"	REAL NOT NULL,
+	"Folate"	REAL NOT NULL,
+	"IronFe"	REAL NOT NULL,
+	"MagnesiumMg"	REAL NOT NULL,
+	"VitaminC"	REAL NOT NULL,
+	"Caffeine"	REAL NOT NULL,
+	"Cholesterol"	REAL NOT NULL,
+	"Alcohol"	REAL NOT NULL,
+	CONSTRAINT "FoodId" PRIMARY KEY("FoodId" AUTOINCREMENT)
+);
+ 
+
+Tell me what is the prefered JSON layout I should use.`
+
