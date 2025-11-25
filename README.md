@@ -1,344 +1,165 @@
-# ChatBot – Tkinter Desktop Client for OpenAI Responses API
+# OpenAIAPITkinterPlay
 
-A minimalist, keyboard-friendly desktop chat client built with **Tkinter** that talks to the **OpenAI Responses API**. It lets you:
+This repo contains two Tkinter desktop utilities:
 
-- Pick a model available on your account (auto-listed).
-- Compose and manage **system prompts** as reusable files.
-- Run multi-turn chats with **autosave** and named **session saves**.
-- Optionally use a **hosted web search tool** (if your model/account supports it).
-- Extract and display **sources/URLs** from responses.
-- Trim oversized chat histories with an automatic **summarization** pass.
+- `ChatBot.py`: keyboard-friendly OpenAI Responses API client with prompt/session management and optional browsing.
+- `InsetNIP.py`: paste-one-record JSON-to-SQLite inserter for a `foods.db` nutrition database.
 
-> **File:** `ChatBot.py`  
-> **Repo:** `https://github.com/namor5772/OpenAIAPITkinterPlay`  
-> **Python:** 3.10+ (uses the `str | None` type union and the OpenAI Python 1.x SDK)
+Most other files are supporting assets (icons, saved prompts/chats, helper scripts). The focus is on these two apps.
 
 ---
 
-> **Docs:** 
-> [Quickstart](docs/QUICKSTART.md) • 
-> [Troubleshooting](docs/TROUBLESHOOTING.md) • 
-> [Architecture](docs/ARCHITECTURE.md) • 
-> [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md) • 
-> [Prompt Presets](docs/PROMPTS.md)
+## Repository layout
 
-
-## Table of Contents
-
-- [Demo](#demo)
-- [Features](#features)
-- [Architecture Overview](#architecture-overview)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Running the App](#running-the-app)
-- [Using the App](#using-the-app)
-  - [Model selection](#model-selection)
-  - [System prompts (save/load/delete)](#system-prompts-saveloaddelete)
-  - [Chats (new/save/load/delete/autosave)](#chats-newsaveloadautosavedelete)
-  - [Sending messages](#sending-messages)
-  - [Sources/URL extraction](#sourcesurl-extraction)
-  - [Keyboard accessibility & shortcuts](#keyboard-accessibility--shortcuts)
-- [Data & File Layout](#data--file-layout)
-- [How Web Search Is Used (Optional)](#how-web-search-is-used-optional)
-- [Token Management & Summarization](#token-management--summarization)
-- [Troubleshooting](#troubleshooting)
-- [Roadmap Ideas](#roadmap-ideas)
-- [Contributing](#contributing)
-- [License](#license)
+- `ChatBot.py`: main chat client.
+- `InsetNIP.py`: nutrition inserter GUI (filename kept as-is even though it reads as "Insert NIP").
+- `system_prompts/`: saved prompt `.txt` files and chat session `.chat.json` files.
+- `docs/`: screenshots and auxiliary docs for ChatBot (quickstart, shortcuts, architecture).
+- `*.ico` / `*.png`: window icons and artwork.
+- `.textpad_state*.json`: remembers the last-used prompt/chat for ChatBot.
 
 ---
 
-## Demo
+## Environment setup (shared)
 
-screenshot of the only window of this app:
+1. Install Python 3.10+ (Tkinter ships with python.org installers for Windows/macOS; Linux may need `python3-tk`).
+2. Create a virtual environment:
+   ```bash
+   python -m venv .venv
+   # Windows
+   .venv\Scripts\activate
+   # macOS/Linux
+   source .venv/bin/activate
+   ```
+3. Install packages for ChatBot:
+   ```bash
+   pip install --upgrade pip
+   pip install openai tiktoken
+   # Optional (nicer thumbnails for attached photos):
+   pip install pillow
+   ```
+4. Set your OpenAI API key for ChatBot:
+   - PowerShell: `setx OPENAI_API_KEY "sk-..."` (restart shell afterwards)
+   - macOS/Linux shell: `export OPENAI_API_KEY="sk-..."`
 
-![ChatBot screenshot](docs/screenshot.png)
-
----
-
-## Features
-
-- **Native desktop UI**: Tkinter UI with large chat area and an adjacent editor for the active system prompt.
-- **Model discovery**: Lists chat-capable models on your account and filters out embeddings/audio/etc.
-- **System prompt manager**: Save your prompt variants as plain `.txt` files and reload them instantly.
-- **Session manager**: Save entire chat transcripts (including history and system prompt text) as `.chat.json`.
-- **Autosave & restore**: On exit, unnamed sessions are safely written to `_autosave.chat.json` and restored next launch.
-- **Optional browsing**: Togglable **hosted web search tool** support. If a tool/model mismatch occurs, the app falls back gracefully.
-- **Source extraction**: Pulls URLs from both structured tool outputs and assistant text, then displays them on demand.
-- **Big history? No problem.** When history exceeds `max_tokens` (default 20,000), earlier turns are summarized and compressed.
-
----
-
-
----
-
-## Prompt Presets (starter system prompts)
-
-Unzip **`system_prompts_long.zip`** into your repo’s **`system_prompts/`** folder, or keep them in a separate folder and load via the UI. These are long-form, opinionated prompts; feel free to trim to taste.
-
-| File | Purpose |
-|---|---|
-| `00-Response-Template.txt` | Universal output structure (Answer first → Details → Next steps → Summary). |
-| `01-Generalist-Desktop-Assistant.txt` | Decisive desktop helper; strong defaults, structured answers. |
-| `02-Senior-Code-Assistant.txt` | Code diagnosis + patch + runnable example + tests; trade-off analysis. |
-| `03-Python-Tkinter-Coach.txt` | Tkinter patterns (threading with `after()`, layout, progress/cancel). |
-| `04-Researcher-with-Citations.txt` | Research mode with concise citations and conflict handling. |
-| `05-Robotics-Embedded-AI-Architect.txt` | LLM+vision+policy integration; timing budgets; ROS2 interfaces. |
-| `06-Radio-Streaming-and-Automation.txt` | Ethical stream discovery and Selenium/Playwright automation patterns. |
-| `07-3D-Printing-Enclosure-Consultant.txt` | Material selection, design rules, thermal and mounting guidance. |
-| `08-Socratic-Math-Physics-Tutor.txt` | One-question-at-a-time tutoring with units and worked examples. |
-| `09-Decision-Advisor-Opinionated.txt` | Options with pros/cons, decision matrix, and a clear recommendation. |
-
-**How to use:** Place the `.txt` files into `system_prompts/`, then **Load** the one you want in the right-hand editor and click **NEW CHAT**.
-
-
-## Architecture Overview
-
-Two primary classes:
-
-- **`ChatMemoryBot`**  
-  Encapsulates OpenAI client usage, history management, token counting, summarization, request building (with/without tools), and source/URL extraction.
-
-- **`ChatbotApp`**  
-  All Tkinter user interface code (widgets, layout, events, file I/O for prompts and chats, autosave/restore, keyboardization of buttons).
-
-High-level flow:
-1. UI initializes (`ChatbotApp`) and creates/ensures a `system_prompts/` directory in the **current working directory**.
-2. On startup, tries to restore the **last used prompt** and **last chat** (or autosave).
-3. Models are listed via `OpenAI().models.list()` and presented in a combobox.
-4. User composes/loads a system prompt, chats, and optionally shows detected sources.
+`InsetNIP.py` uses only the Python standard library (tkinter, sqlite3, json, pathlib) and needs no extra packages.
 
 ---
 
-## Requirements
+## ChatBot.py - OpenAI Responses desktop client
 
-- **Python 3.10+**
-- **OpenAI Python SDK v1.x** (the `openai` package providing `from openai import OpenAI`)
-- **tiktoken** for token counting
-- **Tkinter** (bundled with Python on Windows/macOS via the python.org installer; Linux users may need a package)
+A single-window Tkinter app for multi-turn chatting with the OpenAI Responses API. It stays responsive, keeps your prompts organized, and autosaves your work.
 
-### OS-specific notes
+### Core capabilities
 
-- **Windows**: Tkinter ships with the standard Python installer.  
-- **macOS**: Prefer Python from [python.org](https://www.python.org/downloads/) to ensure Tkinter availability.  
-- **Linux** (Debian/Ubuntu):  
-  ```bash
-  sudo apt-get update
-  sudo apt-get install -y python3-tk
-  ```
+- Model picker that filters to chat-capable models on your account.
+- Side-by-side UI: chat history on the left, system-prompt editor on the right.
+- Prompt manager: save/load/delete prompt files (`system_prompts/*.txt`).
+- Session manager: save/load/delete named chats (`system_prompts/*.chat.json`) plus automatic `_autosave.chat.json` on exit.
+- Autosave of the last-opened prompt/chat location in `.textpad_state.json`.
+- Image attachments: add one or more photos to a question; they are sent as `input_image` parts alongside your text.
+- Optional hosted `web_search` tool support with automatic retry if the selected model does not allow tools.
+- Token counting with `tiktoken` and summarization of older turns when history grows large.
+- Keyboard-friendly controls (Tab/Shift+Tab navigation, Enter/Space on buttons, shortcuts like Ctrl+S for saving prompts).
 
----
+### Running ChatBot
 
-## Installation
-
-Create and activate a virtual environment (recommended):
-
-```bash
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-pip install --upgrade pip
-pip install openai tiktoken
-```
-
-> Tkinter is not installed via `pip`. See OS notes above if your Python lacks Tkinter.
-
----
-
-## Configuration
-
-The OpenAI SDK reads your API key from environment variables by default.
-
-Set **`OPENAI_API_KEY`**:
-
-- **PowerShell (Windows)**  
-  ```powershell
-  setx OPENAI_API_KEY "sk-...your-key..."
-  # Restart terminal/app after setting
-  ```
-
-- **Command Prompt (Windows, temporary for the current shell)**  
-  ```cmd
-  set OPENAI_API_KEY=sk-...your-key...
-  ```
-
-- **macOS/Linux (temporary for the current shell)**  
-  ```bash
-  export OPENAI_API_KEY="sk-...your-key..."
-  ```
-
-Optionally, you can toggle the built-in “hosted web search” tool in code:
-
-```python
-ENABLE_HOSTED_WEB_SEARCH = True  # or False
-```
-
-> The app will automatically fall back to a non-tool request if your chosen model doesn’t support the `web_search` tool.
-
----
-
-## Running the App
-
-From the repository root (or wherever `ChatBot.py` lives):
+From the repository root (after activating your venv and setting `OPENAI_API_KEY`):
 
 ```bash
 python ChatBot.py
 ```
 
-The window opens at a fixed size (`1600x950` by default: chat on the left, prompt editor on the right).
+The app creates `system_prompts/` next to the script if it does not exist, then restores your last prompt/chat or the autosave. The window opens at a fixed size with chat on the left and the prompt editor on the right.
+
+### Using ChatBot
+
+- **System prompts**: edit in the right pane, then "Save System Prompt as" to create `system_prompts/<name>.txt`. "Load" brings one back; "Delete" removes the file after confirmation.
+- **Chats**: "NEW CHAT" clears history but keeps the current prompt. "Save Chat as" creates `system_prompts/<name>.chat.json` containing the transcript and metadata. "Load" switches chats (the current one is autosaved first). "Delete" removes the selected chat file after confirmation.
+- **Photos/attachments**: click **Add photos** above the input field to pick images (`png`, `jpg/jpeg`, `webp`, `gif`). Thumbnails appear in the attachment bar; use **Clear** or the per-photo remove button to drop them. Attached images are sent with your text in the next message.
+- **Sources**: a **Show sources** button appends URLs found in the response object or assistant text.
+- **Autosave and state**: the last prompt/chat name is stored in `.textpad_state.json`. Unnamed chats are written to `_autosave.chat.json` on exit and restored on next launch.
+
+### Configuration notes
+
+- The OpenAI SDK reads `OPENAI_API_KEY` from your environment.
+- Browsing is controlled in code via `ENABLE_HOSTED_WEB_SEARCH` near the top of `ChatBot.py`. If disabled, requests are sent without the hosted `web_search` tool.
+
+### Extra references
+
+Older-but-useful docs live under `docs/`:
+
+- `docs/QUICKSTART.md`: short setup/run guide.
+- `docs/KEYBOARD_SHORTCUTS.md`: full shortcut list.
+- `docs/ARCHITECTURE.md`: details on `ChatMemoryBot` (API/summarization) and `ChatbotApp` (UI layer).
+- `docs/screenshot.png`: UI preview.
 
 ---
 
-## Using the App
+## InsetNIP.py - JSON to SQLite inserter
 
-### Model selection
-- The app lists models from `client.models.list()`.
-- Non-chat models (embeddings, audio, realtime, etc.) are filtered out.
-- Pick a model from the **Model** combobox at the top left. The selection updates both “default” and “browsing” model slots internally.
+A small Tkinter helper for inserting a single food record into an existing `foods.db` SQLite database. You paste one JSON object; the app validates keys and values before writing a row.
 
-### System prompts (save/load/delete)
-- Type your **system prompt** in the right pane (gray background).
-- **Save System Prompt as**: type a short name (no extension) and press **Enter** or **Ctrl+S** → saved as `system_prompts/<name>.txt`.
-- **Load**: pick a file from the dropdown to load it into the editor.
-- **DELETE**: removes the currently loaded `.txt`. (Confirmation required.)
-- **CLEAR**: clears the editor and forgets the loaded file name.
+### What it expects
 
-> The app persists which prompt and chat were last used in `.textpad_state.json` (next to `ChatBot.py`).
+- A SQLite database at the path defined by `DB_PATH` near the top of `InsetNIP.py` (update it to your local `foods.db`).
+- The JSON object must include these fields (matching the `Foods` table, minus the auto-increment `FoodId`): `FoodDescription`, `Energy`, `Protein`, `FatTotal`, `SaturatedFat`, `TransFat`, `PolyunsaturatedFat`, `MonounsaturatedFat`, `Carbohydrate`, `Sugars`, `DietaryFibre`, `SodiumNa`, `CalciumCa`, `PotassiumK`, `ThiaminB1`, `RiboflavinB2`, `NiacinB3`, `Folate`, `IronFe`, `MagnesiumMg`, `VitaminC`, `Caffeine`, `Cholesterol`, `Alcohol`.
+- Extra keys are rejected unless they are in `IGNORED_EXTRA_KEYS` (currently `notes`/`Notes`). Numeric `null` or `"null"` values are treated as `0.0`; a missing description becomes an empty string.
 
-### Chats (new/save/load/autosave/delete)
-- **NEW CHAT**: starts a fresh conversation (history reset to the current system prompt).
-- **Save Chat as**: name the current chat and save → `system_prompts/<name>.chat.json`.
-- **Load** a named chat from the dropdown. The app **pre-saves** your current chat (named → overwrite; unnamed → autosave) before switching.
-- **DELETE** removes a selected `.chat.json` after confirmation.
-- **Autosave on exit**: If your current chat is unnamed, it’s written to `system_prompts/_autosave.chat.json` on close and restored on next launch.
+Example input (single record):
 
-### Sending messages
-- Type in the input field (bottom left) and press **Enter** to send.
-- The app sends through the OpenAI **Responses API** (`client.responses.create`).
-- If `ENABLE_HOSTED_WEB_SEARCH=True`, the request includes a `tools=[{"type": "web_search"}]`. If OpenAI returns a tool/model mismatch error, the app automatically retries without tools.
-
-### Sources/URL extraction
-- Click **Show sources** to append a list of detected URLs to the transcript area.
-- Extraction looks for:
-  1) Structured fields like `url`, `source`, or `href` inside the raw response object.  
-  2) Any `http(s)://` links in the assistant’s final message text.
-
-### Keyboard accessibility & shortcuts
-- **Enter** on buttons (when focused) activates them.
-- **Space** on buttons (when focused) activates them.
-- **Ctrl+S** saves the current system prompt file.
-- **Ctrl+N** clears the system prompt editor (does not affect chat).
-- Comboboxes accept **Enter** to load the selected item.
-- Most buttons are given `takefocus` and key bindings so you can navigate with **Tab / Shift+Tab**.
-
----
-
-## Data & File Layout
-
-All content is created relative to the **current working directory**.
-
-```
-.
-├─ ChatBot.py
-├─ .textpad_state.json                 # remembers last prompt/chat
-└─ system_prompts/
-   ├─ your-prompt-1.txt               # saved system prompts
-   ├─ your-prompt-2.txt
-   ├─ your-chat-1.chat.json           # saved chat sessions
-   ├─ your-chat-2.chat.json
-   └─ _autosave.chat.json             # auto-restored unnamed session
-```
-
-> **Note:** prompt files are plain text; chat files are JSON containing model metadata, the visible transcript, and the structured `chat_history` array sent to the API.
-
----
-
-## How Web Search Is Used (Optional)
-
-If `ENABLE_HOSTED_WEB_SEARCH=True`, the app constructs a request like:
-
-```python
+```json
 {
-  "model": <your-selected-model>,
-  "input": <chat_history>,
-  "tools": [{"type": "web_search"}],
-  "tool_choice": "auto"
+  "FoodDescription": "Example food",
+  "Energy": 123,
+  "Protein": 4.5,
+  "FatTotal": 2.1,
+  "SaturatedFat": 0.5,
+  "TransFat": 0,
+  "PolyunsaturatedFat": 0.3,
+  "MonounsaturatedFat": 1.0,
+  "Carbohydrate": 20.4,
+  "Sugars": 5.0,
+  "DietaryFibre": 3.2,
+  "SodiumNa": 210,
+  "CalciumCa": 50,
+  "PotassiumK": 80,
+  "ThiaminB1": 0.1,
+  "RiboflavinB2": 0.05,
+  "NiacinB3": 0.8,
+  "Folate": 12,
+  "IronFe": 0.6,
+  "MagnesiumMg": 15,
+  "VitaminC": 6,
+  "Caffeine": 0,
+  "Cholesterol": 0,
+  "Alcohol": 0,
+  "notes": "optional free-form note (ignored)"
 }
 ```
 
-If OpenAI returns an error indicating the tool isn’t supported for the selected model/account, the app logs a warning and **retries without tools** on the default model. This means you can leave browsing enabled without fear of hard failures.
+### Running InsetNIP
+
+1. Edit `DB_PATH` in `InsetNIP.py` so it points to your `foods.db`.
+2. Ensure the database exists (the app shows an error dialog and exits if the file is missing).
+3. Launch the GUI:
+   ```bash
+   python InsetNIP.py
+   ```
+4. Paste a JSON object into the text box and click **Insert**. The app validates required keys, warns about unexpected keys, converts nulls to `0.0`, and inserts the row. Success and error messages appear as dialogs; the new `FoodId` is reported on success.
 
 ---
 
-## Token Management & Summarization
+## Troubleshooting and tips
 
-- The app counts tokens for all messages using **tiktoken**.  
-- If the total exceeds **`max_tokens`** (default **20,000**), the app:
-  1) Extracts the system message and the **last 10 messages**.  
-  2) Summarizes the **older messages** using the **default model** (tool-free).  
-  3) Replaces the older messages with a single “Summary of earlier conversation” assistant message.  
-
-This keeps your chat readable and within context limits while preserving recent detail.
-
----
-
-## Troubleshooting
-
-**1) `401 Unauthorized` or “No API key provided”**  
-- Ensure `OPENAI_API_KEY` is set in your environment and restart your terminal.
-
-**2) No models appear / “0 Chat Models”**  
-- Your account may not have access to chat models, or network restrictions block the models endpoint.  
-- Verify the SDK version:  
-  ```bash
-  pip show openai
-  ```
-  You should be on a 1.x release compatible with `from openai import OpenAI`.
-
-**3) `KeyError` in `tiktoken.encoding_for_model()`**  
-- The code falls back to `o200k_base` for long-context models and `cl100k_base` otherwise.  
-- If you see logs about a fallback, this is expected and harmless.
-
-**4) Tool/model mismatch errors mentioning `web_search`**  
-- The app should log a warning and retry without tools automatically.  
-- If you prefer to avoid the warning altogether, set:
-  ```python
-  ENABLE_HOSTED_WEB_SEARCH = False
-  ```
-
-**5) Tkinter not found**  
-- Install the Tk bindings for your OS (see Requirements). On Debian/Ubuntu: `sudo apt-get install python3-tk`.
-
-**6) Window doesn’t fit small screens**  
-- The window is intentionally non-resizable; adjust `WINDOW_WIDTH`, `WINDOW_HEIGHT`, and `WINDOW_W` near the top of the file and rerun.
-
----
-
-## Roadmap Ideas
-
-- Optional **streaming** responses for faster perceived latency.
-- Toggle for **resizable** layout and/or vertical split mode.
-- Model profiles (pin favorite models, default per prompt).
-- Theming (dark mode), font size controls.
-- Export transcript to **Markdown/HTML** with embedded sources.
-- Pluggable tools panel (function calling, code execution, retrieval, etc.).
-
----
-
-## Contributing
-
-Issues and PRs are welcome. Please keep the UI simple and cross-platform, and prefer standard Python library solutions where reasonable.
+- Tkinter on Linux may require `sudo apt-get install python3-tk` (or your distro equivalent).
+- If ChatBot shows "401" or "No API key provided", re-check `OPENAI_API_KEY` and restart the shell.
+- For ChatBot tool errors mentioning `web_search`, leave it enabled (the app retries without tools automatically) or set `ENABLE_HOSTED_WEB_SEARCH = False` near the top of `ChatBot.py`.
+- Image attachments work without Pillow; installing Pillow only improves thumbnails.
+- `InsetNIP.py` performs client-side validation only. Make sure your `foods.db` schema matches the expected columns to avoid SQL errors.
 
 ---
 
 ## License
 
-**MIT License** — see [`LICENSE`](LICENSE) for details.
+MIT - see `LICENSE`.

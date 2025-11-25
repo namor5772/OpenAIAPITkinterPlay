@@ -283,8 +283,8 @@ lemonchiffon
 lightblue
 lightcoral
 lightcyan
-lightgoldenrodyellow
 LightGoldenrodYellow
+lightgoldenrodyellow
 lightgray
 lightgreen
 lightgrey
