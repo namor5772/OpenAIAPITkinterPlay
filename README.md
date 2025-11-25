@@ -77,7 +77,8 @@ The app creates `system_prompts/` next to the script if it does not exist, then 
 - **System prompts**: edit in the right pane, then "Save System Prompt as" to create `system_prompts/<name>.txt`. "Load" brings one back; "Delete" removes the file after confirmation.
 - **Chats**: "NEW CHAT" clears history but keeps the current prompt. "Save Chat as" creates `system_prompts/<name>.chat.json` containing the transcript and metadata. "Load" switches chats (the current one is autosaved first). "Delete" removes the selected chat file after confirmation.
 - **Photos/attachments**: click **Add photos** above the input field to pick images (`png`, `jpg/jpeg`, `webp`, `gif`). Thumbnails appear in the attachment bar; use **Clear** or the per-photo remove button to drop them. Attached images are sent with your text in the next message.
-- **Sources**: a **Show sources** button appends URLs found in the response object or assistant text.
+- **Input/layout details**: the input row runs left-to-right with **Add photos**, a widened multi-line text box, and two stacked action buttons on the right. **Insert NIP** sits above **Show sources**; the text box expands vertically so its bottom aligns with the system-prompt editor for a clean baseline.
+- **Sources**: a **Show sources** button appends URLs found in the response object or assistant text (stacked under **Insert NIP**).
 - **Autosave and state**: the last prompt/chat name is stored in `.textpad_state.json`. Unnamed chats are written to `_autosave.chat.json` on exit and restored on next launch.
 
 ### Configuration notes
