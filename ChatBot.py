@@ -1,14 +1,21 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from tkinter.scrolledtext import ScrolledText
 from pathlib import Path
+import base64
 import json
 import re
 import os
+import mimetypes
 from openai import OpenAI
 import tiktoken
 from typing import List, Dict, Any, Optional, Tuple, Set
 import threading
+try:
+    from PIL import Image, ImageTk  # optional; used for nicer thumbnails if installed
+except ImportError:
+    Image = None
+    ImageTk = None
 
 # --- GUI Layout Constants ---
 WINDOW_WIDTH = 1000
@@ -35,17 +42,25 @@ MODEL_CMB_HEIGHT = 25
 CHAT_DISPLAY_X = 10
 CHAT_DISPLAY_Y = 45+5
 CHAT_DISPLAY_WIDTH = WINDOW_WIDTH - 20
-CHAT_DISPLAY_HEIGHT = WINDOW_HEIGHT - 90-5  # slightly shorter to make room for the Sources button row
-
-INPUT_X = 10
-INPUT_Y = WINDOW_HEIGHT - 35
-INPUT_WIDTH = WINDOW_WIDTH - 110
-INPUT_HEIGHT = 25
+CHAT_DISPLAY_HEIGHT = WINDOW_HEIGHT - 140  # shorter to make room for the attachment bar and buttons
 
 SOURCES_BUTTON_X = WINDOW_WIDTH - 90
 SOURCES_BUTTON_Y = WINDOW_HEIGHT - (35+2)
 SOURCES_BUTTON_WIDTH = 80
 SOURCES_BUTTON_HEIGHT = 25
+
+# Input/attachment row (numbers tuned to avoid overlap with Show sources)
+ATTACH_BUTTON_X = 10
+ATTACH_BUTTON_WIDTH = 96
+ATTACH_BUTTON_HEIGHT = 28
+ATTACH_BAR_HEIGHT = 32
+INPUT_X = ATTACH_BUTTON_X + ATTACH_BUTTON_WIDTH + 12
+INPUT_Y = WINDOW_HEIGHT - 35
+SEND_BUTTON_WIDTH = 70
+SEND_BUTTON_HEIGHT = 25
+SEND_BUTTON_X = SOURCES_BUTTON_X - 8 - SEND_BUTTON_WIDTH
+INPUT_WIDTH = SEND_BUTTON_X - 8 - INPUT_X
+INPUT_HEIGHT = 25
 
 SEND_BTN_LABEL = "Send"
 SRC_BTN_LABEL = "Show sources"
@@ -128,17 +143,84 @@ class ChatMemoryBot:
 
 
 
-    def _count_tokens(self, messages: List[Dict[str, str]]) -> int:
-        return sum(len(self.encoder.encode(msg.get("content", ""))) for msg in messages)
+    def _content_to_text(self, content: Any, include_placeholders: bool = False) -> str:
+        """
+        Extract only the textual parts of a message content payload.
+        When include_placeholders is True, image parts contribute a short placeholder
+        so token counting/logging stays lightweight.
+        """
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: List[str] = []
+            image_added = False
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                p_type = part.get("type", "")
+                if p_type in ("text", "input_text"):
+                    parts.append(part.get("text", ""))
+                elif include_placeholders and p_type in ("image_url", "input_image") and not image_added:
+                    parts.append("[image attached]")
+                    image_added = True
+            return " ".join(p for p in parts if p)
+        return ""
 
 
-    def _summarize_history(self, old_messages: List[Dict[str, str]]) -> str:
+    def _normalize_messages_for_api(
+        self,
+        messages: List[Dict[str, Any]],
+        include_images: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Convert chat_history entries into the structured format expected by the
+        Responses API, optionally omitting image payloads (for summaries).
+        """
+        normalized: List[Dict[str, Any]] = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            raw_content = msg.get("content", "")
+            parts: List[Dict[str, Any]] = []
+            placeholder_added = False
+
+            if isinstance(raw_content, str):
+                parts.append({"type": "input_text", "text": raw_content})
+            elif isinstance(raw_content, list):
+                for part in raw_content:
+                    if not isinstance(part, dict):
+                        continue
+                    p_type = part.get("type")
+                    if p_type in ("text", "input_text"):
+                        parts.append({"type": "input_text", "text": part.get("text", "")})
+                    elif p_type in ("image_url", "input_image"):
+                        image_val = part.get("image_url")
+                        if include_images and image_val:
+                            # Allow either direct string or {"url": ...} shapes.
+                            if isinstance(image_val, dict) and "url" in image_val:
+                                image_val = image_val["url"]
+                            parts.append({"type": "input_image", "image_url": image_val})
+                        elif (not include_images) and (not placeholder_added):
+                            parts.append({"type": "input_text", "text": "[image omitted]"})
+                            placeholder_added = True
+            if not parts:
+                parts.append({"type": "input_text", "text": str(raw_content)})
+
+            normalized.append({"role": role, "content": parts})
+        return normalized
+
+
+    def _count_tokens(self, messages: List[Dict[str, Any]]) -> int:
+        return sum(len(self.encoder.encode(self._content_to_text(msg.get("content", ""), include_placeholders=True))) for msg in messages)
+
+
+    def _summarize_history(self, old_messages: List[Dict[str, Any]]) -> str:
         """
         Use the DEFAULT (non-browsing) model for summaries to avoid any tool usage.
+        Images are stripped to placeholders so we do not inflate the prompt.
         """
-        summary_prompt: List[Dict[str, str]] = [
-            {"role": "system", "content": "Summarize the following chat history in ~500 words, neutral tone."}
-        ] + old_messages
+        summary_prompt: List[Dict[str, Any]] = [
+            {"role": "system", "content": [{"type": "input_text", "text": "Summarize the following chat history in ~500 words, neutral tone."}]}
+        ] + self._normalize_messages_for_api(old_messages, include_images=False)
 
         resp = self.client.responses.create(
             model=self.default_model,  # default model; no tools
@@ -202,7 +284,7 @@ class ChatMemoryBot:
         return _dedupe_preserve_order(cleaned) # type: ignore
 
 
-    def _build_request(self) -> Dict[str, Any]:
+    def _build_request(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Decide model and tool configuration based on ENABLE_HOSTED_WEB_SEARCH.
         Ensures tools are only sent with a browsing-capable model.
@@ -213,7 +295,7 @@ class ChatMemoryBot:
             # Browsing flow: choose browsing model and include the hosted tool
             return {
                 "model": self.browse_model,
-                "input": self.chat_history,
+                "input": messages,
                 "tools": [{"type": "web_search"}],
                 "tool_choice": "auto",
             }
@@ -221,23 +303,39 @@ class ChatMemoryBot:
             # Non-browsing flow: default model with NO tools
             return {
                 "model": self.default_model,
-                "input": self.chat_history,
+                "input": messages,
             }
 
 
-    def ask(self, user_input: str) -> Tuple[str, List[str]]:
+    def ask(self, user_input: str, attachments: Optional[List[Dict[str, str]]] = None) -> Tuple[str, List[str]]:
         print("\nASKING AI")
 
         # Obtain the system prompt string and create the message
         #global str_system_prompt
         self.str_system_prompt = app.txt.get("1.0", tk.END).strip()  # Get the system prompt from the text area
-        self.chat_history[0] = {"role": "system", "content": self.str_system_prompt}
-        print(f"System prompt:\n{self.chat_history}")
+        self.chat_history[0] = {"role": "system", "content": self.str_system_prompt} # type: ignore
+        print(f"System prompt:\n{self._content_to_text(self.chat_history[0].get('content', ''), include_placeholders=True)}")
 
-        self.chat_history.append({"role": "user", "content": user_input})
+        # Build the user message with optional images
+        content_parts: List[Dict[str, Any]] = []
+        if user_input:
+            content_parts.append({"type": "input_text", "text": user_input})
+
+        for att in attachments or []:
+            data_url = att.get("data_url")
+            if data_url:
+                content_parts.append({"type": "input_image", "image_url": data_url})
+
+        if content_parts:
+            self.chat_history.append({"role": "user", "content": content_parts}) # type: ignore
+        else:
+            # Fallback to plain text slot to keep schema valid
+            self.chat_history.append({"role": "user", "content": user_input})
+
         self._trim_history_if_needed()
 
-        request_kwargs: Dict[str, Any] = self._build_request()
+        normalized_history = self._normalize_messages_for_api(self.chat_history, include_images=True)
+        request_kwargs: Dict[str, Any] = self._build_request(normalized_history)
 
         # Primary attempt
         try:
@@ -249,7 +347,7 @@ class ChatMemoryBot:
                 print("[Warn] Tool/model mismatch detected. Retrying without tools on default_model.")
                 fallback_kwargs = { # type: ignore
                     "model": self.default_model,
-                    "input": self.chat_history
+                    "input": self._normalize_messages_for_api(self.chat_history, include_images=True)
                 }
                 resp = self.client.responses.create(**fallback_kwargs) # type: ignore
             else:
@@ -259,7 +357,11 @@ class ChatMemoryBot:
         sources = self._extract_citations(resp, reply)
 
         self.chat_history.append({"role": "assistant", "content": reply})
-        print("\n".join(f"{idx:02d}: {msg}" for idx, msg in enumerate(self.chat_history, 1)))
+        def _log_line(msg: Any) -> str:
+            if isinstance(msg, dict):
+                return f"{msg.get('role', '?')}: {self._content_to_text(msg.get('content', ''), include_placeholders=True)}"
+            return str(msg)
+        print("\n".join(f"{idx:02d}: {_log_line(msg)}" for idx, msg in enumerate(self.chat_history, 1)))
         return reply, sources
 
 
@@ -332,6 +434,8 @@ class ChatbotApp:
         # sets up the chatbot models global array MODEL_OPTIONS[], among other things
         self.bot = ChatMemoryBot()
         self.last_sources: List[str] = []  # stores sources for the most recent bot message
+        self.pending_images: List[Dict[str, str]] = []  # photos queued for the next user message
+        self._thumb_cache: List[Any] = []  # keep references to PhotoImage thumbs
         self.labels = MODEL_OPTIONS
         self.initial_label = MODEL_OPTIONS[0]
 
@@ -373,9 +477,24 @@ class ChatbotApp:
         self.chat_display = ScrolledText(master, wrap=tk.WORD, state='disabled', bg="white")
         self.chat_display.place(x=CHAT_DISPLAY_X, y=CHAT_DISPLAY_Y, width=CHAT_DISPLAY_WIDTH, height=CHAT_DISPLAY_HEIGHT)
 
+        # Attachment bar (sits just above the input row)
+        bar_width = SOURCES_BUTTON_X + SOURCES_BUTTON_WIDTH - ATTACH_BUTTON_X
+        self.attachments_bar = tk.Frame(master, bg="#eef1f5", bd=0)
+        self.attachments_bar.place(x=ATTACH_BUTTON_X, y=INPUT_Y-ATTACH_BAR_HEIGHT-6, width=bar_width, height=ATTACH_BAR_HEIGHT)
+        self.attachments_holder = tk.Frame(self.attachments_bar, bg="#f4f4f4")
+        self.attachments_holder.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        self.clear_attachments_btn = tk.Button(self.attachments_bar, text="Clear", command=self.clear_attachments, state="disabled", padx=6)
+        self.clear_attachments_btn.pack(side="right", padx=(6, 6), pady=2)
+
+        self.attach_button = tk.Button(master, text="Add photos", command=self.add_images)
+        self.attach_button.place(x=ATTACH_BUTTON_X, y=INPUT_Y, width=ATTACH_BUTTON_WIDTH, height=ATTACH_BUTTON_HEIGHT)
+
         self.user_input = tk.Entry(master, bg="lightgray")
         self.user_input.place(x=INPUT_X, y=INPUT_Y, width=INPUT_WIDTH, height=INPUT_HEIGHT)
         self.user_input.bind("<Return>", self.send_message)
+
+        self.send_button = tk.Button(master, text=SEND_BTN_LABEL, command=self.send_message)
+        self.send_button.place(x=SEND_BUTTON_X, y=INPUT_Y, width=SEND_BUTTON_WIDTH, height=SEND_BUTTON_HEIGHT)
 
         self.src_button = tk.Button(master, text=SRC_BTN_LABEL, command=self.show_sources)
         self.src_button.place(x=SOURCES_BUTTON_X, y=SOURCES_BUTTON_Y, width=SOURCES_BUTTON_WIDTH, height=SOURCES_BUTTON_HEIGHT)
@@ -390,11 +509,15 @@ class ChatbotApp:
             self.btn_newChat,
             self.btn_deleteChat,
             self.src_button,
+            self.attach_button,
+            self.send_button,
+            self.clear_attachments_btn,
         ):
             self._keyboardize_button(b)
 
         # ... existing end-of-__init__ code ...
         self.restore_chat_after_init()
+        self._render_attachment_pills()
 
 
 
@@ -588,10 +711,11 @@ class ChatbotApp:
         # --- 5) Clear last sources and any pending input ------------------------
         self.last_sources = []
         self.user_input.delete(0, tk.END)
+        self.clear_attachments()
 
         # --- 6) Provide the usual visual cue -----------------------------------
         self.chat_display.configure(state='normal')
-        self.chat_display.insert(tk.END, "— New chat started —\n\n")
+        self.chat_display.insert(tk.END, "- New chat started -\n\n")
         self.chat_display.configure(state='disabled')
         self.chat_display.see(tk.END)
 
@@ -632,6 +756,100 @@ class ChatbotApp:
         btn.bind("<Return>", _invoke)     # main Enter
         btn.bind("<KP_Enter>", _invoke)   # numeric keypad Enter
         btn.bind("<space>", _invoke)      # Spacebar
+
+
+    # -----------------------
+    # Attachment helpers
+    # -----------------------
+    @staticmethod
+    def _image_to_data_url(path: str) -> str:
+        mime, _ = mimetypes.guess_type(path)
+        if not mime:
+            mime = "image/png"
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+        return f"data:{mime};base64,{b64}"
+
+    def _build_thumbnail(self, path: str, size: int = 36) -> Optional[Any]:
+        """
+        Create a small thumbnail image for display beside the filename.
+        Uses Pillow if available; otherwise returns a flat placeholder square.
+        """
+        try:
+            if Image and ImageTk:
+                img = Image.open(path)
+                img.thumbnail((size, size))
+                return ImageTk.PhotoImage(img)
+        except Exception:
+            pass
+        try:
+            ph = tk.PhotoImage(width=size, height=size)
+            ph.put("#d8dce3", to=(0, 0, size, size))
+            ph.put("#c2c7cf", to=(1, 1, size-1, size-1))
+            return ph
+        except Exception:
+            return None
+
+
+    def _render_attachment_pills(self) -> None:
+        """Refresh the inline chips that show pending photos."""
+        for child in self.attachments_holder.winfo_children():
+            child.destroy()
+        self._thumb_cache.clear()
+
+        if not self.pending_images:
+            tk.Label(self.attachments_holder, text="No photos attached", anchor="w", fg="#555", bg="#f4f4f4", padx=4).pack(side="left")
+            self.clear_attachments_btn.configure(state="disabled")
+            return
+
+        self.clear_attachments_btn.configure(state="normal")
+        for idx, item in enumerate(self.pending_images):
+            pill = tk.Frame(self.attachments_holder, bg="#e6eaef", bd=1, relief="solid")
+            thumb = item.get("thumb")
+            if thumb is not None:
+                lbl_thumb = tk.Label(pill, image=thumb, bg="#e6eaef")
+                lbl_thumb.image = thumb  # type: ignore # prevent GC
+                lbl_thumb.pack(side="left", padx=(4, 2), pady=1)
+                self._thumb_cache.append(thumb)
+            tk.Label(pill, text=item.get("filename", "photo"), bg="#e6eaef").pack(side="left", padx=(2, 4))
+            tk.Button(pill, text="✕", command=lambda i=idx: self.remove_attachment(i), padx=4, pady=0, bg="#dbe0e8", relief="flat").pack(side="right", padx=(0, 2), pady=1)
+            pill.pack(side="left", padx=4, pady=2)
+
+
+    def add_images(self) -> None:
+        """Open a file picker and stage one or more images for the next message."""
+        paths = filedialog.askopenfilenames(
+            title="Select photos",
+            filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.webp;*.gif"), ("All files", "*.*")],
+        )
+        if not paths:
+            return
+
+        added = 0
+        for p in paths:
+            try:
+                data_url = self._image_to_data_url(p)
+            except Exception as e:
+                messagebox.showerror("Image error", f"Could not read {p}:\n{e}")
+                continue
+            name = os.path.basename(p)
+            thumb = self._build_thumbnail(p)
+            self.pending_images.append({"filename": name, "data_url": data_url, "thumb": thumb}) # type: ignore
+            added += 1
+
+        if added:
+            self._render_attachment_pills()
+
+
+    def remove_attachment(self, index: int) -> None:
+        if 0 <= index < len(self.pending_images):
+            del self.pending_images[index]
+        self._render_attachment_pills()
+
+
+    def clear_attachments(self) -> None:
+        self.pending_images.clear()
+        self._render_attachment_pills()
 
 
     def list_txt_basenames(self):
@@ -1135,18 +1353,30 @@ class ChatbotApp:
         self.bot.browse_model = chosen # For simplicity, use the same model for browsing
         print(f"Model changed to: {chosen}")
 
+    def _format_user_display(self, text: str, attachments: List[Dict[str, str]]) -> str:
+        """Compose the transcript text shown for a user message."""
+        if attachments:
+            names = ", ".join(img.get("filename", "photo") for img in attachments)
+            if text:
+                return f"{text}\n[Photos: {names}]"
+            return f"[Photos: {names}]"
+        return text
 
     def send_message(self, _: Optional[Any] = None) -> None:
         user_text = self.user_input.get().strip()
-        if not user_text: return
-        self.display_message("You", user_text)
+        attachments = list(self.pending_images)
+        if not user_text and not attachments:
+            return
+
+        self.display_message("You", self._format_user_display(user_text, attachments))
         self.user_input.delete(0, tk.END)
-        threading.Thread(target=self.get_bot_response, args=(user_text,), daemon=True).start()
+        self.clear_attachments()
+        threading.Thread(target=self.get_bot_response, args=(user_text, attachments), daemon=True).start()
 
 
-    def get_bot_response(self, user_text: str):
+    def get_bot_response(self, user_text: str, attachments: List[Dict[str, str]]):
         try:
-            reply, sources = self.bot.ask(user_text)
+            reply, sources = self.bot.ask(user_text, attachments)
             self.last_sources = sources or []
         except Exception as e:
             reply = f"[Error] {type(e).__name__}: {e}"

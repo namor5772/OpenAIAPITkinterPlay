@@ -11,8 +11,8 @@ from tkinter import scrolledtext
 
 # Path to the SQLite database
 DB_PATH = Path(
-    r"C:\Users\grobl\AppData\Local\Apps\2.0\A0WOLGB4.9YV\J81N8L7C.32C"
-    r"\diet..tion_0000000000000000_0002.0000_53548df2350299b6\foods.db"
+    r"C:\Users\grobl\AppData\Local\Apps\2.0\A0WOLGB4.9YV\J81N8L7C.32C\diet..tion_0000000000000000_0002.0000_53548df2350299b6\foods.db"
+    #r"C:\Users\roman\AppData\Local\Apps\2.0\47YPNLYJ.7QW\WVEC47TY.EC3\diet..tion_0000000000000000_0002.0000_39270b5535d9b46c\foods.db"
 )
 
 # Columns to insert (FoodId is autoincrement, so we omit it)
@@ -92,7 +92,7 @@ def insert_food_record(json_data: dict) -> int:
         cur = conn.cursor()
         cur.execute(sql, values)
         conn.commit()
-        return cur.lastrowid  # The auto-generated FoodId
+        return cur.lastrowid  # type: ignore # The auto-generated FoodId
     finally:
         conn.close()
 
