@@ -7,6 +7,7 @@ import json
 import re
 import os
 import mimetypes
+from InsetNIP import insert_food_record, COLUMNS as NIP_COLUMNS, DB_PATH as NIP_DB_PATH
 from openai import OpenAI
 import tiktoken
 from typing import List, Dict, Any, Optional, Tuple, Set
@@ -42,28 +43,32 @@ MODEL_CMB_HEIGHT = 25
 CHAT_DISPLAY_X = 10
 CHAT_DISPLAY_Y = 45+5
 CHAT_DISPLAY_WIDTH = WINDOW_WIDTH - 20
-CHAT_DISPLAY_HEIGHT = WINDOW_HEIGHT - 140  # shorter to make room for the attachment bar and buttons
+CHAT_DISPLAY_HEIGHT = 740  # shorter to make room for the attachment bar and enlarged input box
 
-SOURCES_BUTTON_X = WINDOW_WIDTH - 90
-SOURCES_BUTTON_Y = WINDOW_HEIGHT - (35+2)
-SOURCES_BUTTON_WIDTH = 80
-SOURCES_BUTTON_HEIGHT = 25
-
-# Input/attachment row (numbers tuned to avoid overlap with Show sources)
+# Input/attachment row (numbers tuned to avoid overlap with action buttons)
 ATTACH_BUTTON_X = 10
 ATTACH_BUTTON_WIDTH = 96
 ATTACH_BUTTON_HEIGHT = 28
 ATTACH_BAR_HEIGHT = 32
 INPUT_X = ATTACH_BUTTON_X + ATTACH_BUTTON_WIDTH + 12
-INPUT_Y = WINDOW_HEIGHT - 35
-SEND_BUTTON_WIDTH = 70
-SEND_BUTTON_HEIGHT = 25
-SEND_BUTTON_X = SOURCES_BUTTON_X - 8 - SEND_BUTTON_WIDTH
-INPUT_WIDTH = SEND_BUTTON_X - 8 - INPUT_X
-INPUT_HEIGHT = 25
+INPUT_Y = WINDOW_HEIGHT - 105  # leave room for taller multi-line input
+INPUT_HEIGHT = 85  # taller so its bottom aligns with the system prompt area
 
-SEND_BTN_LABEL = "Send"
+ACTION_BUTTON_WIDTH = 110
+ACTION_BUTTON_HEIGHT = 26
+SOURCES_BUTTON_WIDTH = ACTION_BUTTON_WIDTH
+SOURCES_BUTTON_HEIGHT = ACTION_BUTTON_HEIGHT
+NIP_BUTTON_WIDTH = ACTION_BUTTON_WIDTH
+NIP_BUTTON_HEIGHT = ACTION_BUTTON_HEIGHT
+SOURCES_BUTTON_X = WINDOW_WIDTH - ACTION_BUTTON_WIDTH - 10
+SOURCES_BUTTON_Y = INPUT_Y + (INPUT_HEIGHT - ACTION_BUTTON_HEIGHT) - 4  # align near bottom of input box
+NIP_BUTTON_X = SOURCES_BUTTON_X
+NIP_BUTTON_Y = SOURCES_BUTTON_Y - NIP_BUTTON_HEIGHT - 6  # stack above sources with small gap
+
+INPUT_WIDTH = SOURCES_BUTTON_X - 8 - INPUT_X
+
 SRC_BTN_LABEL = "Show sources"
+NIP_BTN_LABEL = "Insert NIP"
 
 # --- API Models related ---
 ENABLE_HOSTED_WEB_SEARCH = True  # Turn this on to use the hosted web search tool
@@ -158,7 +163,7 @@ class ChatMemoryBot:
                 if not isinstance(part, dict):
                     continue
                 p_type = part.get("type", "")
-                if p_type in ("text", "input_text"):
+                if p_type in ("text", "input_text", "output_text"):
                     parts.append(part.get("text", ""))
                 elif include_placeholders and p_type in ("image_url", "input_image") and not image_added:
                     parts.append("[image attached]")
@@ -182,16 +187,17 @@ class ChatMemoryBot:
             raw_content = msg.get("content", "")
             parts: List[Dict[str, Any]] = []
             placeholder_added = False
+            text_type = "output_text" if role == "assistant" else "input_text"
 
             if isinstance(raw_content, str):
-                parts.append({"type": "input_text", "text": raw_content})
+                parts.append({"type": text_type, "text": raw_content})
             elif isinstance(raw_content, list):
                 for part in raw_content:
                     if not isinstance(part, dict):
                         continue
                     p_type = part.get("type")
-                    if p_type in ("text", "input_text"):
-                        parts.append({"type": "input_text", "text": part.get("text", "")})
+                    if p_type in ("text", "input_text", "output_text"):
+                        parts.append({"type": text_type, "text": part.get("text", "")})
                     elif p_type in ("image_url", "input_image"):
                         image_val = part.get("image_url")
                         if include_images and image_val:
@@ -200,10 +206,10 @@ class ChatMemoryBot:
                                 image_val = image_val["url"]
                             parts.append({"type": "input_image", "image_url": image_val})
                         elif (not include_images) and (not placeholder_added):
-                            parts.append({"type": "input_text", "text": "[image omitted]"})
+                            parts.append({"type": text_type, "text": "[image omitted]"})
                             placeholder_added = True
             if not parts:
-                parts.append({"type": "input_text", "text": str(raw_content)})
+                parts.append({"type": text_type, "text": str(raw_content)})
 
             normalized.append({"role": role, "content": parts})
         return normalized
@@ -409,7 +415,9 @@ class ChatbotApp:
         self.btn_clear.place(x=WINDOW_WIDTH_actual-97, y=PADY, width=70, height=26)
 
         self.txt = ScrolledText(master, wrap=tk.WORD, undo=True, bg="lightgrey")
-        self.txt.place(x=PADX, y=CHAT_DISPLAY_Y+35, width=WINDOW_W - 20, height=CHAT_DISPLAY_HEIGHT+34-35)
+        # Stretch the system prompt editor closer to the bottom of the window
+        sp_height = WINDOW_HEIGHT - (CHAT_DISPLAY_Y + 35) - 20
+        self.txt.place(x=PADX, y=CHAT_DISPLAY_Y+35, width=WINDOW_W - 20, height=sp_height)
 
         # --- System Prompt UI elements -- END ---------------------------------
 
@@ -438,6 +446,8 @@ class ChatbotApp:
         self._thumb_cache: List[Any] = []  # keep references to PhotoImage thumbs
         self.labels = MODEL_OPTIONS
         self.initial_label = MODEL_OPTIONS[0]
+        self.last_bot_reply: str = ""  # raw text of the last assistant message
+        self.last_bot_json: Optional[Dict[str, Any]] = None  # parsed JSON from last assistant message
 
 
         # --- Chat session UI elements ----------------------------------------
@@ -489,15 +499,15 @@ class ChatbotApp:
         self.attach_button = tk.Button(master, text="Add photos", command=self.add_images)
         self.attach_button.place(x=ATTACH_BUTTON_X, y=INPUT_Y, width=ATTACH_BUTTON_WIDTH, height=ATTACH_BUTTON_HEIGHT)
 
-        self.user_input = tk.Entry(master, bg="lightgray")
+        self.user_input = tk.Text(master, bg="lightgray", wrap=tk.WORD)
         self.user_input.place(x=INPUT_X, y=INPUT_Y, width=INPUT_WIDTH, height=INPUT_HEIGHT)
-        self.user_input.bind("<Return>", self.send_message)
-
-        self.send_button = tk.Button(master, text=SEND_BTN_LABEL, command=self.send_message)
-        self.send_button.place(x=SEND_BUTTON_X, y=INPUT_Y, width=SEND_BUTTON_WIDTH, height=SEND_BUTTON_HEIGHT)
+        self.user_input.bind("<Return>", self._on_input_return)
 
         self.src_button = tk.Button(master, text=SRC_BTN_LABEL, command=self.show_sources)
         self.src_button.place(x=SOURCES_BUTTON_X, y=SOURCES_BUTTON_Y, width=SOURCES_BUTTON_WIDTH, height=SOURCES_BUTTON_HEIGHT)
+
+        self.nip_button = tk.Button(master, text=NIP_BTN_LABEL, command=self.insert_nip_from_chat)
+        self.nip_button.place(x=NIP_BUTTON_X, y=NIP_BUTTON_Y, width=NIP_BUTTON_WIDTH, height=NIP_BUTTON_HEIGHT)
 
         # --- Chat session UI elements -- END ---------------------------------
 
@@ -510,8 +520,8 @@ class ChatbotApp:
             self.btn_deleteChat,
             self.src_button,
             self.attach_button,
-            self.send_button,
             self.clear_attachments_btn,
+            self.nip_button,
         ):
             self._keyboardize_button(b)
 
@@ -710,7 +720,7 @@ class ChatbotApp:
 
         # --- 5) Clear last sources and any pending input ------------------------
         self.last_sources = []
-        self.user_input.delete(0, tk.END)
+        self._clear_input()
         self.clear_attachments()
 
         # --- 6) Provide the usual visual cue -----------------------------------
@@ -987,7 +997,7 @@ class ChatbotApp:
 
             # Clear last sources and pending input
             self.last_sources = []
-            self.user_input.delete(0, tk.END)
+            self._clear_input()
 
             # Reset the bot to a single system message using current editor text
             current_sp = self.txt.get("1.0", tk.END).strip() or self.bot.str_system_prompt
@@ -1362,14 +1372,32 @@ class ChatbotApp:
             return f"[Photos: {names}]"
         return text
 
+    def _get_input_text(self) -> str:
+        """Fetch the trimmed text from the multi-line input box."""
+        return self.user_input.get("1.0", tk.END).strip()
+
+    def _clear_input(self) -> None:
+        """Clear the multi-line input box."""
+        self.user_input.delete("1.0", tk.END)
+
+    def _on_input_return(self, event: Optional[Any] = None) -> Optional[str]:
+        """
+        Send the message on Enter. Allow Shift+Enter to insert a newline.
+        Returns 'break' to stop Tk from adding a newline when sending.
+        """
+        if event and (event.state & 0x1):  # Shift held
+            return None
+        self.send_message()
+        return "break"
+
     def send_message(self, _: Optional[Any] = None) -> None:
-        user_text = self.user_input.get().strip()
+        user_text = self._get_input_text()
         attachments = list(self.pending_images)
         if not user_text and not attachments:
             return
 
         self.display_message("You", self._format_user_display(user_text, attachments))
-        self.user_input.delete(0, tk.END)
+        self._clear_input()
         self.clear_attachments()
         threading.Thread(target=self.get_bot_response, args=(user_text, attachments), daemon=True).start()
 
@@ -1381,6 +1409,8 @@ class ChatbotApp:
         except Exception as e:
             reply = f"[Error] {type(e).__name__}: {e}"
             self.last_sources = []
+        self.last_bot_reply = reply
+        self.last_bot_json = self._find_first_json_object(reply)
         self.display_message("Bot", reply)
 
 
@@ -1402,6 +1432,196 @@ class ChatbotApp:
             self.chat_display.insert(tk.END, "\n")
         self.chat_display.configure(state='disabled')
         self.chat_display.see(tk.END)
+
+    # -----------------------
+    # NIP / foods.db helpers
+    # -----------------------
+    def _find_first_json_object(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Try to locate the first JSON object inside a text blob (plain or fenced).
+        Returns the parsed dict if found; otherwise None.
+        """
+        if not text:
+            return None
+
+        # 1) Direct parse if the whole string is JSON
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+
+        candidates: List[str] = []
+
+        # 2) Code-fenced blocks
+        fence_pattern = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
+        for match in fence_pattern.finditer(text):
+            candidates.append(match.group(1))
+
+        # 3) Fallback: first {...} span in the text
+        if not candidates:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                candidates.append(text[start:end+1])
+
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _coerce_number(value: Any, field_name: str) -> float:
+        """Convert a value to float with a forgiving fallback to 0.0."""
+        if value is None:
+            return 0.0
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return 0.0
+            cleaned = cleaned.replace(",", "")
+            try:
+                return float(cleaned)
+            except Exception as e:  # pragma: no cover - GUI helper
+                raise ValueError(f"Could not convert '{field_name}' value '{value}' to a number.") from e
+        try:
+            return float(value)
+        except Exception as e:  # pragma: no cover - GUI helper
+            raise ValueError(f"Could not convert '{field_name}' value '{value}' to a number.") from e
+
+    def _convert_nip_json_to_food_record(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert the bot's NIP JSON format into the Foods table shape expected by InsetNIP.
+        Accepts either:
+          - Direct Foods-table JSON (has all NIP_COLUMNS), or
+          - { "food_name": "...", "basis": "per_100g", "per_100g": { ... } }
+        """
+        # If the JSON already matches the DB column names, just normalize types
+        if all(col in data for col in NIP_COLUMNS):
+            record = {}
+            for col in NIP_COLUMNS:
+                if col == "FoodDescription":
+                    record[col] = str(data.get(col, ""))
+                else:
+                    record[col] = self._coerce_number(data.get(col), col)
+            return record
+
+        # Otherwise expect the per_100g structure
+        per_100g = data.get("per_100g")
+        if not isinstance(per_100g, dict):
+            # allow slight variants
+            per_100g = data.get("per_100_g") if isinstance(data.get("per_100_g"), dict) else {}
+        if not isinstance(per_100g, dict):
+            raise ValueError("Could not find a 'per_100g' object in the bot response JSON.")
+
+        food_name = data.get("food_name") or data.get("FoodDescription") or data.get("name")
+        if not food_name:
+            raise ValueError("Missing 'food_name' in the bot response JSON.")
+
+        nip_field_map: Dict[str, Tuple[str, ...]] = {
+            "Energy": ("energy_kj",),
+            "Protein": ("protein_g",),
+            "FatTotal": ("fat_total_g", "fat_g"),
+            "SaturatedFat": ("saturated_fat_g",),
+            "TransFat": ("trans_fat_mg",),
+            "PolyunsaturatedFat": ("polyunsaturated_fat_g",),
+            "MonounsaturatedFat": ("monounsaturated_fat_g",),
+            "Carbohydrate": ("carbohydrate_g",),
+            "Sugars": ("sugars_g", "sugar_g"),
+            "DietaryFibre": ("dietary_fibre_g", "dietary_fiber_g"),
+            "SodiumNa": ("sodium_mg",),
+            "CalciumCa": ("calcium_mg",),
+            "PotassiumK": ("potassium_mg",),
+            "ThiaminB1": ("thiamin_mg", "thiamine_mg"),
+            "RiboflavinB2": ("riboflavin_mg",),
+            "NiacinB3": ("niacin_mg",),
+            "Folate": ("folate_\u00b5g", "folate_ug", "folate_mcg"),
+            "IronFe": ("iron_mg",),
+            "MagnesiumMg": ("magnesium_mg",),
+            "VitaminC": ("vitamin_c_mg",),
+            "Caffeine": ("caffeine_mg",),
+            "Cholesterol": ("cholesterol_mg",),
+            "Alcohol": ("alcohol_g",),
+        }
+
+        record: Dict[str, Any] = {"FoodDescription": str(food_name)}
+        for db_col, nip_keys in nip_field_map.items():
+            val: Any = None
+            for key in nip_keys:
+                if key in per_100g:
+                    val = per_100g[key]
+                    break
+                if key in data:
+                    val = data[key]
+                    break
+            record[db_col] = self._coerce_number(val, db_col)
+
+        return record
+
+    def insert_nip_from_chat(self) -> None:
+        """
+        Parse the latest bot message for a NIP JSON block and insert it via InsetNIP.
+        """
+        # Prefer the cached last reply; fall back to the whole transcript
+        source_text = self.last_bot_reply or ""
+        if not source_text:
+            source_text = self.chat_display.get("1.0", tk.END)
+
+        nip_obj = self.last_bot_json or self._find_first_json_object(source_text)
+        if not nip_obj:
+            messagebox.showwarning(
+                "No JSON found",
+                "Could not find a JSON object in the last bot message."
+            )
+            return
+
+        try:
+            record = self._convert_nip_json_to_food_record(nip_obj)
+        except Exception as e:
+            messagebox.showerror("NIP parse error", str(e))
+            return
+
+        if not NIP_DB_PATH.exists():
+            messagebox.showerror(
+                "Database not found",
+                f"foods.db was not found at:\n{NIP_DB_PATH}"
+            )
+            return
+
+        summary = (
+            f"FoodDescription: {record.get('FoodDescription', '')}\n"
+            f"Energy (kJ): {record.get('Energy')}\n"
+            f"Protein (g): {record.get('Protein')}\n"
+            f"Carbohydrate (g): {record.get('Carbohydrate')}\n"
+            f"Sugars (g): {record.get('Sugars')}\n"
+            f"Sodium (mg): {record.get('SodiumNa')}\n\n"
+            "Insert this record into foods.db?"
+        )
+
+        if not messagebox.askyesno("Insert NIP", summary):
+            return
+
+        try:
+            food_id = insert_food_record(record)
+        except Exception as e:
+            messagebox.showerror("Insert failed", f"Failed to insert record:\n{e}")
+            return
+
+        # Cache for future reuse and confirm to the user
+        self.last_bot_json = nip_obj
+        messagebox.showinfo(
+            "Inserted",
+            f"Inserted food record successfully.\nFoodId = {food_id}"
+        )
+        # Also log the insert into the chat transcript for quick status visibility
+        desc = str(record.get("FoodDescription", "")).strip() or "(no description)"
+        status_msg = f"[NIP] Inserted '{desc}' into foods.db (FoodId {food_id})."
+        self.display_message("System", status_msg)
 
 
 if __name__ == "__main__":
